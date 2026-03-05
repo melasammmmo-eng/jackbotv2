@@ -740,11 +740,19 @@ async def ignore_role_badword(interaction: discord.Interaction, role: discord.Ro
     guild_data = get_guild_data(interaction.guild_id)
     rid = str(role.id)
     guild_data.setdefault("ignored_roles", [])
+    
     if rid not in guild_data["ignored_roles"]:
         guild_data["ignored_roles"].append(rid)
         save_data(bot_data)
-        await interaction.response.send_message(f"{role.mention} ignored from badword filter", ephemeral=True)
+        await interaction.response.send_message(f"✅ {role.name} now ignores the filter.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"ℹ️ {role.name} is already ignored.", ephemeral=True)
 
+# NOW line 932 starts here and won't error
+@tree.command(name="mute", description="Mutes a user")
+@app_commands.default_permissions(moderate_members=True)
+async def mute(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
+    # ... rest of your mute code
 @tree.command(name="ignore_user_badword", description="Make user ignore badword filter")
 @app_commands.default_permissions(administrator=True)
 async def ignore_user_badword(interaction: discord.Interaction, user: discord.Member):
