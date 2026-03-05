@@ -899,38 +899,34 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     embed.set_footer(text="JackBot Moderation")
     await interaction.response.send_message(embed=embed)
 
-    @tree.command(name="ban", description="Bans a member from the server")
-@app_commands.default_permissions(ban_members=True)
-@app_commands.describe(member="The user to ban", reason="Reason for the ban")
+    # --- BAN COMMAND (Line 903 area) ---
+@tree.command(name="ban", description="Bans a member")
+@app_commands.default_permissions(ban_members=True) # Check this line's alignment!
 async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
-    if member.top_role >= interaction.user.top_role:
-        return await interaction.response.send_message("❌ You cannot ban someone with a higher or equal role!", ephemeral=True)
-
-    await member.ban(reason=reason, delete_message_seconds=86400) # Deletes last 24h of messages
-
-    embed = discord.Embed(title="User Banned", color=0x8b0000, timestamp=datetime.utcnow())
-    embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-    embed.add_field(name="Target", value=f"{member.mention} ({member.id})", inline=False)
-    embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
-    embed.add_field(name="Reason", value=reason, inline=True)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    embed.set_footer(text="JackBot Moderation")
+    await interaction.response.defer()
     
-    await interaction.response.send_message(embed=embed)
+    if member.top_role >= interaction.user.top_role:
+        return await interaction.followup.send("❌ You cannot ban this user.")
 
-    @tree.command(name="unban", description="Unbans a user via their ID")
+    await member.ban(reason=reason)
+    
+    embed = discord.Embed(title="User Banned", color=0x8b0000)
+    embed.add_field(name="Target", value=member.mention)
+    embed.add_field(name="Moderator", value=interaction.user.mention)
+    await interaction.followup.send(embed=embed)
+
+# --- UNBAN COMMAND ---
+@tree.command(name="unban", description="Unbans a user via ID")
 @app_commands.default_permissions(ban_members=True)
 async def unban(interaction: discord.Interaction, user_id: str, reason: str = "No reason provided"):
+    await interaction.response.defer()
+    
     user = await bot.fetch_user(int(user_id))
     await interaction.guild.unban(user, reason=reason)
 
-    embed = discord.Embed(title="User Unbanned", color=0x00ff00, timestamp=datetime.utcnow())
-    embed.add_field(name="Target", value=f"{user.name} ({user.id})", inline=False)
-    embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
-    embed.add_field(name="Reason", value=reason, inline=True)
-    embed.set_footer(text="JackBot Moderation")
-    
-    await interaction.response.send_message(embed=embed)
+    embed = discord.Embed(title="User Unbanned", color=0x00ff00)
+    embed.add_field(name="Target", value=user.name)
+    await interaction.followup.send(embed=embed)
 
     @tree.command(name="mute", description="Mutes a user (Timeout + Role) with an embed response")
 @app_commands.default_permissions(moderate_members=True)
