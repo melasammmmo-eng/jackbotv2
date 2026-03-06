@@ -1,6 +1,6 @@
+
 # JackBot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
 # Run: python bot.py
-
 import os
 import discord
 from discord import app_commands
@@ -11,6 +11,17 @@ import random
 import asyncio
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
+import re
+
+def parse_timespan(timespan: str):
+    pattern = re.compile(r"(\d+)([dhms])")
+    matches = pattern.findall(timespan.lower())
+    if not matches: return None
+    time_params = {"days": 0, "hours": 0, "minutes": 0, "seconds": 0,"weeks": 0}
+    unit_map = {'d': 'days', 'h': 'hours', 'm': 'minutes', 's': 'seconds', 'w': 'weeks'}
+    for amount, unit in matches:
+        time_params[unit_map[unit]] += int(amount)
+    return timedelta(**time_params)
 
 load_dotenv()
 
@@ -740,19 +751,11 @@ async def ignore_role_badword(interaction: discord.Interaction, role: discord.Ro
     guild_data = get_guild_data(interaction.guild_id)
     rid = str(role.id)
     guild_data.setdefault("ignored_roles", [])
-    
     if rid not in guild_data["ignored_roles"]:
         guild_data["ignored_roles"].append(rid)
         save_data(bot_data)
-        await interaction.response.send_message(f"✅ {role.name} now ignores the filter.", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"ℹ️ {role.name} is already ignored.", ephemeral=True)
+        await interaction.response.send_message(f"{role.mention} ignored from badword filter", ephemeral=True)
 
-# NOW line 932 starts here and won't error
-@tree.command(name="mute", description="Mutes a user")
-@app_commands.default_permissions(moderate_members=True)
-async def mute(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
-    # ... rest of your mute code
 @tree.command(name="ignore_user_badword", description="Make user ignore badword filter")
 @app_commands.default_permissions(administrator=True)
 async def ignore_user_badword(interaction: discord.Interaction, user: discord.Member):
@@ -890,53 +893,99 @@ async def pingstop(interaction: discord.Interaction, target: discord.Member = No
 # Moderation Commands
 # ────────────────────────────────────────────────
 
-@tree.command(name="kick", description="Kicks a member from the server")
+@tree.command(
+    name="setup_mute_role",
+    description="Create a permanent Muted role that silences users until the role is removed"
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(
+    role_name="Name of the mute role (default: Muted)",
+    color_hex="Hex color for the role (default: ffaa00 - orange)"
+)
+async def setup_mute_role(
+    interaction: discord.Interaction,
+    role_name: str = "Muted",
+    color_hex: str = "ffaa00"
+):
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+
+    # 1. Create the role
+    try:
+        mute_role = await guild.create_role(
+            name=role_name,
+            color=int(color_hex, 16),
+            hoist=False,
+            mentionable=False,
+            reason=f"Permanent mute role created by {interaction.user}"
+        )
+    except discord.Forbidden:
+        return await interaction.followup.send("❌ I don't have permission to create roles.", ephemeral=True)
+    except Exception as e:
+        return await interaction.followup.send(f"❌ Failed to create role: {e}", ephemeral=True)
+
+    # 2. Apply deny permissions to EVERY channel
+    updated = 0
+    failed = 0
+    for channel in guild.channels:
+        try:
+            await channel.set_permissions(
+                mute_role,
+                send_messages=False,
+                add_reactions=False,
+                speak=False,
+                stream=False,
+                use_voice_activation=False,
+                connect=False,  # optional - prevents joining voice
+                reason="Permanent mute role setup"
+            )
+            updated += 1
+        except discord.Forbidden:
+            failed += 1
+        except Exception as e:
+            print(f"Failed on channel {channel.name}: {e}")
+            failed += 1
+
+    # 3. Save the role ID so /mute can use it later
+    guild_data = get_guild_data(guild.id)
+    guild_data["mute_role_id"] = mute_role.id
+    save_data(bot_data)
+
+    # 4. Success message
+    embed = discord.Embed(
+        title="Permanent Mute Role Created",
+        description=f"Role {mute_role.mention} is now set up.\n"
+                    f"Anyone with this role is muted **forever** until you remove the role manually.",
+        color=int(color_hex, 16)
+    )
+    embed.add_field(name="Channels updated", value=f"{updated}/{len(guild.channels)}", inline=True)
+    embed.add_field(name="Failed channels", value=str(failed), inline=True)
+    embed.add_field(
+        name="How to use",
+        value="• Give role: `/mute @user` (if you updated your mute command)\n"
+              "• Remove mute: right-click user → Roles → remove Muted\n"
+              "• Or use `/unmute @user` if you have it",
+        inline=False
+    )
+    embed.set_footer(text="This is a permanent role-based mute — no timeout needed")
+
+    await interaction.followup.send(embed=embed, ephemeral=False)
+    
+@tree.command(name="kick", description="Kick member")
 @app_commands.default_permissions(kick_members=True)
-@app_commands.describe(member="The user to kick", reason="Reason for the kick")
-async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
-    if member.top_role >= interaction.user.top_role:
-        return await interaction.response.send_message("❌ You cannot kick someone with a higher or equal role!", ephemeral=True)
-    
-    await member.kick(reason=reason)
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+    try:
+        if member.top_role >= interaction.guild.me.top_role or member.top_role >= interaction.user.top_role:
+            await interaction.response.send_message("Cannot kick (hierarchy).", ephemeral=True)
+            return
+        await member.kick(reason=reason or "No reason")
+        await interaction.response.send_message(f"Kicked {member.mention}", ephemeral=False)
+        log_general_action(interaction.guild, "KICK", interaction.user, member, reason or "No reason")
+    except discord.Forbidden:
+        await interaction.response.send_message("Missing permissions to kick.", ephemeral=True)
 
-    embed = discord.Embed(title="User Kicked", color=0xff4500, timestamp=datetime.utcnow())
-    embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-    embed.add_field(name="Target", value=f"{member.mention} ({member.id})", inline=False)
-    embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
-    embed.add_field(name="Reason", value=reason, inline=True)
-    embed.set_footer(text="JackBot Moderation")
-    await interaction.response.send_message(embed=embed)
-
-    # --- BAN COMMAND (Line 903 area) ---
-@tree.command(name="ban", description="Bans a member")
-@app_commands.default_permissions(ban_members=True) # Check this line's alignment!
-async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
-    await interaction.response.defer()
-    
-    if member.top_role >= interaction.user.top_role:
-        return await interaction.followup.send("❌ You cannot ban this user.")
-
-    await member.ban(reason=reason)
-    
-    embed = discord.Embed(title="User Banned", color=0x8b0000)
-    embed.add_field(name="Target", value=member.mention)
-    embed.add_field(name="Moderator", value=interaction.user.mention)
-    await interaction.followup.send(embed=embed)
-
-# --- UNBAN COMMAND ---
-@tree.command(name="unban", description="Unbans a user via ID")
-@app_commands.default_permissions(ban_members=True)
-async def unban(interaction: discord.Interaction, user_id: str, reason: str = "No reason provided"):
-    await interaction.response.defer()
-    
-    user = await bot.fetch_user(int(user_id))
-    await interaction.guild.unban(user, reason=reason)
-
-    embed = discord.Embed(title="User Unbanned", color=0x00ff00)
-    embed.add_field(name="Target", value=user.name)
-    await interaction.followup.send(embed=embed)
-
-    @tree.command(name="mute", description="Mutes a user (Timeout + Role) with an embed response")
+@tree.command(name="mute", description="Mutes a user (Timeout + Role) with an embed response")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.describe(time="Format: 1d, 10h, 30m, 15s (e.g., 1h30m)", reason="Reason for the mute")
 async def mute(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
@@ -1114,65 +1163,6 @@ async def lock(interaction: discord.Interaction, reason: str = "No reason provid
         log_general_action(interaction.guild, "CHANNEL LOCKED", interaction.user, None, reason, f"Channel: {channel.mention}")
     except discord.Forbidden:
         await interaction.response.send_message("Missing permission to manage channel.", ephemeral=True)
-        @tree.command(name="lockdown", description="Locks all text channels")
-@app_commands.default_permissions(administrator=True)
-async def lockdown(interaction: discord.Interaction):
-    await interaction.response.defer()
-    locked = 0
-    for channel in interaction.guild.text_channels:
-        overwrites = channel.overwrites_for(interaction.guild.default_role)
-        if overwrites.send_messages is False: continue
-        overwrites.send_messages = False
-        await channel.set_permissions(interaction.guild.default_role, overwrite=overwrites)
-        locked += 1
-
-    embed = discord.Embed(title="🚨 Server Lockdown", description=f"All {locked} channels have been locked.", color=0xff0000)
-    embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-    await interaction.followup.send(embed=embed)
-
-@tree.command(name="unlockdownall", description="Unlocks all text channels")
-@app_commands.default_permissions(administrator=True)
-async def unlockdown(interaction: discord.Interaction):
-    await interaction.response.defer()
-    unlocked = 0
-    for channel in interaction.guild.text_channels:
-        overwrites = channel.overwrites_for(interaction.guild.default_role)
-        overwrites.send_messages = None 
-        await channel.set_permissions(interaction.guild.default_role, overwrite=overwrites)
-        unlocked += 1
-
-    embed = discord.Embed(title="🔓 Lockdown Lifted", description=f"All {unlocked} channels have been reopened.", color=0x00ff00)
-    await interaction.followup.send(embed=embed)
-    
-    @tree.command(name="lockdownall", description="Locks all text channels")
-@app_commands.default_permissions(administrator=True)
-async def lockdown(interaction: discord.Interaction):
-    await interaction.response.defer()
-    locked = 0
-    for channel in interaction.guild.text_channels:
-        overwrites = channel.overwrites_for(interaction.guild.default_role)
-        if overwrites.send_messages is False: continue
-        overwrites.send_messages = False
-        await channel.set_permissions(interaction.guild.default_role, overwrite=overwrites)
-        locked += 1
-
-    embed = discord.Embed(title="🚨 Server Lockdown", description=f"All {locked} channels have been locked.", color=0xff0000)
-    embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-    await interaction.followup.send(embed=embed)
-
-@tree.command(name="unlockdownall", description="Unlocks all text channels")
-@app_commands.default_permissions(administrator=True)
-async def unlockdown(interaction: discord.Interaction):
-    await interaction.response.defer()
-    unlocked = 0
-    for channel in interaction.guild.text_channels:
-        overwrites = channel.overwrites_for(interaction.guild.default_role)
-        overwrites.send_messages = None 
-        await channel.set_permissions(interaction.guild.default_role, overwrite=overwrites)
-        unlocked += 1
-
-    embed = discord.Embed(title="🔓 Lockdown Lifted", description=f"All {unlocked} channels have been reopened.", color=0x00ff00)
-    await interaction.followup.send(embed=embed)
 
 @tree.command(name="unlock", description="Unlock current channel")
 @app_commands.default_permissions(manage_channels=True)
@@ -1387,9 +1377,9 @@ async def aipickup(interaction: discord.Interaction, target: discord.Member = No
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(title="JackBot Commands", color=0x5865F2)
     embed.add_field(name="Moderation & Setup", value=(
-        "`/set_welcome` `/set_welcome_message` `/set_log``/setmuterole` `/set_timeout_log` `/set_ban_log` `/set_warn_log` `/set_autorole_log` `/set_delete_log` `/log_settings` `/setupverify` `/set_join_role` `/view_join_role`"
+        "`/set_welcome` `/set_welcome_message` `/set_log` `/set_timeout_log` `/set_ban_log` `/set_warn_log` `/set_autorole_log` `/set_delete_log` `/log_settings` `/setupverify` `/set_join_role` `/view_join_role`"
         "`/kick` `/ban` `/mute` `/unmute` `/warn` `/warn_history` `/clear` "
-        "`/lock` `/unlock` `/unlockall` `/lockall` `/slowmode` `/hide` `/unhide` "
+        "`/lock` `/unlock` `/slowmode` `/hide` `/unhide` "
         "`/userinfo` `/antispam` `/recent_bans` `/recent_warns` `/test_welcome` `/test_badword` `/set_join_role`"
     ), inline=False)
     embed.add_field(name="Bad Words", value=(
