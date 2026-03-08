@@ -1,6 +1,5 @@
 # JackBot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
 # Run: python bot.py
-import os
 import discord
 from discord import app_commands
 from discord.ext import commands
