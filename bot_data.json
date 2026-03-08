@@ -1,0 +1,159 @@
+{
+  "1196980093248094340": {
+    "welcome_channel": 1477403592947269765,
+    "log_channel": 1476367036207861983,
+    "badwords": [
+      "nigger",
+      "retard",
+      "fuck",
+      "shit",
+      "niga",
+      "ass",
+      "k"
+    ],
+    "ignored_roles": [],
+    "ignored_users": [
+      "1362207242396504166"
+    ],
+    "tags": {},
+    "rr": {
+      "1476709414244188170": {
+        "🫡": 1476689362036068404
+      },
+      "1477171689740566529": {
+        "🔥": 1477169467573407907
+      },
+      "1477177423643807858": {
+        "🦆": 1477177271637901445
+      }
+    },
+    "starboard_channel": null,
+    "starboard_threshold": 5,
+    "youtube_notifier": null,
+    "antispam_enabled": true,
+    "antispam_messages": 3,
+    "antispam_seconds": 3,
+    "warnings": {
+      "1196975168149520485": [
+        {
+          "reason": "a test",
+          "timestamp": "2026-02-27T22:04:29.713090",
+          "by": "1362207242396504166"
+        }
+      ],
+      "1375573956999905502": [
+        {
+          "reason": "for saying hard r",
+          "timestamp": "2026-02-28T01:59:49.017321",
+          "by": "1362207242396504166"
+        }
+      ],
+      "1168356068154417154": [
+        {
+          "reason": "No reason",
+          "timestamp": "2026-03-02T22:35:29.321239",
+          "by": "1362207242396504166"
+        }
+      ],
+      "1123756138027028571": [
+        {
+          "reason": "No reason",
+          "timestamp": "2026-03-02T22:57:32.235523",
+          "by": "1362207242396504166"
+        }
+      ]
+    },
+    "join_role_id": 1477190543975907471,
+    "timeout_log_channel": 1477112117667565598,
+    "verify": {
+      "channel_id": 1477176658388713646,
+      "message_id": 1477348029618192566,
+      "role_id": 1383434270659448833,
+      "emoji": "<:emoji_2:1386449919241355335>",
+      "remove_after_verify": false,
+      "remove_role_id": 1477190543975907471
+    },
+    "welcome_settings": {
+      "title": "hello",
+      "description": "hello {user} and welcome to {server} and we hope you stay",
+      "color": "0xffd700",
+      "show_join_date": true,
+      "show_member_count": true
+    },
+    "delete_log_channel": 1478532252420804638,
+    "autorole_log_channel": 1478532802071892201
+  },
+  "1362995994152800469": {
+    "welcome_channel": null,
+    "welcome_settings": {
+      "title": "Welcome!",
+      "description": "Welcome {user} to **{server}**!\nWe're now **{member_count}** members strong!\nPlease read #rules and have fun!",
+      "color": "0x00ff00",
+      "show_join_date": true,
+      "show_member_count": true
+    },
+    "log_channel": null,
+    "timeout_log_channel": null,
+    "ban_log_channel": null,
+    "warn_log_channel": null,
+    "autorole_log_channel": null,
+    "delete_log_channel": null,
+    "join_role_id": 1435039114746400941,
+    "badwords": [],
+    "ignored_roles": [],
+    "ignored_users": [],
+    "tags": {},
+    "rr": {},
+    "starboard_channel": null,
+    "starboard_threshold": 5,
+    "antispam_enabled": true,
+    "antispam_messages": 5,
+    "antispam_seconds": 5,
+    "warnings": {},
+    "verify": {
+      "channel_id": null,
+      "message_id": null,
+      "role_id": null,
+      "emoji": "✅",
+      "remove_after_verify": false,
+      "remove_role_id": null
+    }
+  },
+  "1477524390131269857": {
+    "welcome_channel": null,
+    "welcome_settings": {
+      "title": "Welcome!",
+      "description": "Welcome {user} to **{server}**!\nWe're now **{member_count}** members strong!\nPlease read #rules and have fun!",
+      "color": "0x00ff00",
+      "show_join_date": true,
+      "show_member_count": true
+    },
+    "log_channel": null,
+    "timeout_log_channel": 1478960123094241381,
+    "ban_log_channel": null,
+    "warn_log_channel": null,
+    "autorole_log_channel": null,
+    "delete_log_channel": null,
+    "join_role_id": null,
+    "badwords": [],
+    "ignored_roles": [],
+    "ignored_users": [],
+    "tags": {},
+    "rr": {},
+    "starboard_channel": null,
+    "starboard_threshold": 5,
+    "antispam_enabled": true,
+    "antispam_messages": 5,
+    "antispam_seconds": 5,
+    "warnings": {},
+    "verify": {
+      "channel_id": null,
+      "message_id": null,
+      "role_id": null,
+      "emoji": "✅",
+      "remove_after_verify": false,
+      "remove_role_id": null
+    },
+    "mute_role_id": 1479283291562709156
+  }
+}
