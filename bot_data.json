@@ -1,1 +1,49 @@
-
+{
+  "1196980093248094340": {
+    "welcome_channel": 1477403592947269765,
+    "welcome_settings": {
+      "title": "hello",
+      "description": "hello and welcome  {user} and welcome to {server} we hope you stay <:Screenshot20260225191436:1477526855203557429>",
+      "color": "0xffd700",
+      "show_join_date": true,
+      "show_member_count": true
+    },
+    "log_channel": null,
+    "timeout_log_channel": 1477112117667565598,
+    "ban_log_channel": null,
+    "warn_log_channel": 1476367036207861983,
+    "autorole_log_channel": 1478532802071892201,
+    "delete_log_channel": 1478532252420804638,
+    "join_role_id": 1477190543975907471,
+    "badwords": [
+      "shit",
+      "fuck",
+      "nigger",
+      "bitch",
+      "slut",
+      "nigga",
+      "niga",
+      "pussy"
+    ],
+    "ignored_roles": [
+      "1477098344630456320"
+    ],
+    "ignored_users": [],
+    "tags": {},
+    "rr": {},
+    "starboard_channel": null,
+    "starboard_threshold": 8,
+    "antispam_enabled": true,
+    "antispam_messages": 3,
+    "antispam_seconds": 3,
+    "warnings": {},
+    "verify": {
+      "channel_id": 1477176658388713646,
+      "message_id": 1480273505441284109,
+      "role_id": 1383434270659448833,
+      "emoji": "<:emoji_2:1386449919241355335>",
+      "remove_after_verify": false,
+      "remove_role_id": 1477190543975907471
+    }
+  }
+}
