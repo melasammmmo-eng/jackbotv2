@@ -1,4 +1,4 @@
-# JackBot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
+# bot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
 # Run: python bot.py
 import os
 import discord
@@ -317,7 +317,7 @@ def log_general_action(guild, action_type, actor, target=None, reason=None, extr
     embed.add_field(name="Reason", value=reason or "None", inline=False)
     if extra:
         embed.add_field(name="Details", value=extra, inline=False)
-    embed.set_footer(text="General Log • JackBot")
+    embed.set_footer(text="General Log • bot")
     asyncio.create_task(log_channel.send(embed=embed))
 
 def log_timeout_action(guild, actor, target, duration_min=None, reason=None, is_antispam=False, is_unmute=False):
@@ -332,7 +332,7 @@ def log_timeout_action(guild, actor, target, duration_min=None, reason=None, is_
         embed.add_field(name="Duration", value=f"{duration_min} minutes", inline=True)
     embed.add_field(name="Reason", value=reason or "No reason", inline=False)
     embed.add_field(name="Triggered by", value="Anti-spam" if is_antispam else actor.mention, inline=False)
-    embed.set_footer(text="Timeout Log • JackBot")
+    embed.set_footer(text="Timeout Log • bot")
     if log_channel:
         asyncio.create_task(log_channel.send(embed=embed))
     else:
@@ -348,7 +348,7 @@ def log_warn_action(guild, actor, target, reason=None):
     embed.add_field(name="Target", value=target.mention, inline=True)
     embed.add_field(name="By", value=actor.mention, inline=True)
     embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
-    embed.set_footer(text="Warning Log • JackBot")
+    embed.set_footer(text="Warning Log • bot")
     asyncio.create_task(log_channel.send(embed=embed))
 
 # ────────────────────────────────────────────────
@@ -445,7 +445,7 @@ async def on_member_join(member):
                 await member.add_roles(role)
                 print(f"Assigned {role.name} to {member}")
                 embed = discord.Embed(title="Auto Role Assigned", description=f"{member.mention} received {role.name}", color=0x55ff55, timestamp=datetime.utcnow())
-                embed.set_footer(text="Join Role Log • JackBot")
+                embed.set_footer(text="Join Role Log • bot")
                 await send_log(guild, "autorole", embed)
             except discord.Forbidden:
                 print(f"Missing perms to assign role to {member}")
@@ -477,7 +477,7 @@ async def on_member_join(member):
             embed.add_field(name="Joined Server", value=discord.utils.format_dt(member.joined_at, "F"), inline=True)
         if settings.get("show_member_count", True):
             embed.add_field(name="Member Count", value=f"{guild.member_count:,}", inline=True)
-        embed.set_footer(text="Welcome to the server! • JackBot")
+        embed.set_footer(text="Welcome to the server! • bot")
         await channel.send(embed=embed)
     except Exception as e:
         print(f"Welcome message failed in {guild.id}: {e}")
@@ -563,7 +563,7 @@ async def recent_bans(interaction: discord.Interaction, limit: app_commands.Rang
         )
    
     embed.description = description or "No entries in range."
-    embed.set_footer(text=f"Showing {len(shown)} of {len(entries)} total • JackBot")
+    embed.set_footer(text=f"Showing {len(shown)} of {len(entries)} total • bot")
    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -592,7 +592,7 @@ async def recent_warns(interaction: discord.Interaction, limit: app_commands.Ran
         )
    
     embed.description = description or "No entries in range."
-    embed.set_footer(text=f"Showing {len(shown)} of {len(entries)} total • JackBot")
+    embed.set_footer(text=f"Showing {len(shown)} of {len(entries)} total • bot")
    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -717,7 +717,7 @@ async def setupverify(
             color=0x55ff55,
             timestamp=datetime.utcnow()
         )
-        embed.set_footer(text="React to verify • JackBot")
+        embed.set_footer(text="React to verify • bot")
         msg = await channel.send(embed=embed)
         await msg.add_reaction(emoji)
         guild_data["verify"] = {
@@ -759,7 +759,7 @@ async def userinfo(interaction: discord.Interaction, member: discord.Member = No
     embed.add_field(name=f"Roles ({len(roles)})", value=" ".join(roles) or "None", inline=False)
     embed.add_field(name="Bot", value="Yes" if target.bot else "No", inline=True)
     embed.add_field(name="Boosting Since", value=discord.utils.format_dt(target.premium_since, "F") if target.premium_since else "Not boosting", inline=True)
-    embed.set_footer(text="JackBot User Info")
+    embed.set_footer(text="bot User Info")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ────────────────────────────────────────────────
@@ -813,6 +813,54 @@ async def remove_badword(interaction: discord.Interaction, word: str):
     else:
         await interaction.response.send_message(f"'{word}' not in filter.", ephemeral=True)
 
+# ────────────────────────────────────────────────
+# /clearwarns
+# ────────────────────────────────────────────────
+
+@tree.command(name="clearwarns", description="Clear ALL warnings from a user")
+@app_commands.default_permissions(moderate_members=True)
+@app_commands.describe(member="User to clear warnings for")
+async def clearwarns(interaction: discord.Interaction, member: discord.Member):
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data.setdefault("warnings", {})
+
+    uid = str(member.id)
+    if uid not in guild_data["warnings"] or not guild_data["warnings"][uid]:
+        await interaction.response.send_message(f"{member.mention} has no warnings.", ephemeral=True)
+        return
+
+    old_count = len(guild_data["warnings"][uid])
+    del guild_data["warnings"][uid]
+    save_data(bot_data)
+
+    embed = discord.Embed(
+        title="Warnings Cleared",
+        description=f"All **{old_count}** warnings removed from {member.mention}.",
+        color=0x55ff55,
+        timestamp=datetime.utcnow()
+    )
+    embed.set_footer(text=f"Cleared by {interaction.user} • bot")
+
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+
+    # Log
+    warn_log_cid = guild_data.get("warn_log_channel")
+    log_channel = interaction.guild.get_channel(warn_log_cid) if warn_log_cid else None
+    log_embed = discord.Embed(
+        title="All Warnings Cleared",
+        description=f"{member.mention} had all warnings removed.",
+        color=0x55ff55,
+        timestamp=datetime.utcnow()
+    )
+    log_embed.add_field(name="By", value=interaction.user.mention)
+    log_embed.add_field(name="Previous Count", value=old_count)
+    log_embed.set_footer(text="Warning Log • bot")
+
+    if log_channel:
+        await log_channel.send(embed=log_embed)
+    else:
+        log_general_action(interaction.guild, "CLEAR ALL WARNINGS", interaction.user, member, "All warnings removed", f"Previous count: {old_count}")
+
 @tree.command(name="badwords_list", description="List bad words")
 async def badwords_list(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild_id)
@@ -842,6 +890,67 @@ async def badwords_clear(interaction: discord.Interaction):
         await interaction.followup.send("Cleared all bad words.", ephemeral=True)
     except asyncio.TimeoutError:
         await interaction.followup.send("Timed out – no change.", ephemeral=True)
+
+# ────────────────────────────────────────────────
+# /removewarn
+# ────────────────────────────────────────────────
+
+@tree.command(name="removewarn", description="Remove a specific warning")
+@app_commands.default_permissions(moderate_members=True)
+@app_commands.describe(
+    member="User to remove warning from",
+    warn_number="Warning number to remove (1 = first)"
+)
+async def removewarn(interaction: discord.Interaction, member: discord.Member, warn_number: int):
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data.setdefault("warnings", {})
+
+    uid = str(member.id)
+    if uid not in guild_data["warnings"] or not guild_data["warnings"][uid]:
+        await interaction.response.send_message(f"{member.mention} has no warnings.", ephemeral=True)
+        return
+
+    warnings = guild_data["warnings"][uid]
+    if warn_number < 1 or warn_number > len(warnings):
+        await interaction.response.send_message(f"Invalid number. User has {len(warnings)} warnings.", ephemeral=True)
+        return
+
+    removed = warnings.pop(warn_number - 1)
+    if not warnings:
+        del guild_data["warnings"][uid]
+    save_data(bot_data)
+
+    embed = discord.Embed(
+        title="Warning Removed",
+        description=f"Warning #{warn_number} removed from {member.mention}.",
+        color=0x55ff55,
+        timestamp=datetime.utcnow()
+    )
+    embed.add_field(name="Reason (was)", value=removed["reason"])
+    embed.add_field(name="Remaining", value=len(warnings))
+    embed.set_footer(text=f"Removed by {interaction.user} • bot")
+
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+
+    # Log
+    warn_log_cid = guild_data.get("warn_log_channel")
+    log_channel = interaction.guild.get_channel(warn_log_cid) if warn_log_cid else None
+    log_embed = discord.Embed(
+        title="Warning Removed",
+        color=0x55ff55,
+        timestamp=datetime.utcnow()
+    )
+    log_embed.add_field(name="Target", value=f"{member} ({member.id})")
+    log_embed.add_field(name="By", value=interaction.user.mention)
+    log_embed.add_field(name="Removed #", value=warn_number)
+    log_embed.add_field(name="Reason (was)", value=removed["reason"])
+    log_embed.add_field(name="Remaining", value=len(warnings))
+    log_embed.set_footer(text="Warning Log • bot")
+
+    if log_channel:
+        await log_channel.send(embed=log_embed)
+    else:
+        log_general_action(interaction.guild, "REMOVE WARNING", interaction.user, member, removed["reason"], f"#{warn_number} | Remaining: {len(warnings)}")
 
 # ────────────────────────────────────────────────
 # Badword Ignore Commands
@@ -914,7 +1023,7 @@ async def antispam(interaction: discord.Interaction, enabled: bool = None, messa
     embed = discord.Embed(title="Anti-Spam Settings", color=0x5865F2)
     embed.add_field(name="Status", value=status, inline=True)
     embed.add_field(name="Limit", value=f"{msgs} messages in {secs} seconds", inline=True)
-    embed.set_footer(text="Mutes for 5 min on detection • JackBot")
+    embed.set_footer(text="Mutes for 5 min on detection • bot")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ────────────────────────────────────────────────
@@ -1054,113 +1163,204 @@ async def setup_mute_role(
     embed.set_footer(text="This is a permanent role-based mute — no timeout needed")
     await interaction.followup.send(embed=embed, ephemeral=False)
 
-@tree.command(name="kick", description="Kick member")
+# ────────────────────────────────────────────────
+# /kick
+# ────────────────────────────────────────────────
+
+@tree.command(name="kick", description="Kick a member")
+@app_commands.describe(member="The member to kick", reason="Reason (optional)")
 @app_commands.default_permissions(kick_members=True)
 async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = None):
-    try:
-        if member.top_role >= interaction.guild.me.top_role or member.top_role >= interaction.user.top_role:
-            await interaction.response.send_message("Cannot kick (hierarchy).", ephemeral=True)
-            return
-        await member.kick(reason=reason or "No reason")
-        await interaction.response.send_message(f"Kicked {member.mention}", ephemeral=False)
-        log_general_action(interaction.guild, "KICK", interaction.user, member, reason or "No reason")
-    except discord.Forbidden:
-        await interaction.response.send_message("Missing permissions to kick.", ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
 
-@tree.command(name="timeout", description="Mutes a user (Timeout + Role) with an embed response")
-@app_commands.default_permissions(moderate_members=True)
-@app_commands.describe(time="Format: 1d, 10h, 30m, 15s (e.g., 1h30m)", reason="Reason for the mute")
-async def mute(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
-    await interaction.response.defer()
-    duration = parse_timespan(time)
-    if not duration:
-        return await interaction.followup.send("❌ Invalid time format! Use `1d`, `1h`, `30m`, etc.")
     try:
-        timeout_duration = duration if duration <= timedelta(days=28) else timedelta(days=28)
-        await member.timeout(timeout_duration, reason=reason)
-        guild_data = get_guild_data(interaction.guild_id)
-        role_id = guild_data.get("mute_role_id")
-        if role_id:
-            mute_role = interaction.guild.get_role(int(role_id))
-            if mute_role:
-                await member.add_roles(mute_role, reason=reason)
-        embed = discord.Embed(
-            title="User Muted",
-            color=0xffa500,
+        await member.kick(reason=reason)
+
+        # DM to user
+        dm_embed = discord.Embed(
+            title="Kicked",
+            description=f"You were kicked from **{interaction.guild.name}**.",
+            color=0xff5555,
             timestamp=datetime.utcnow()
         )
-        embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-        embed.add_field(name="Target", value=f"{member.mention} ({member.id})", inline=False)
-        embed.add_field(name="Duration", value=time, inline=True)
-        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Reason", value=reason, inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_footer(text="JackBot Moderation")
-        await interaction.followup.send(embed=embed)
+        dm_embed.add_field(name="Reason", value=reason or "None")
+        dm_embed.set_footer(text=f"By {interaction.user}")
+        try:
+            await member.send(embed=dm_embed)
+        except:
+            pass
+
+        # Public reply
+        chat_embed = discord.Embed(
+            title="Member Kicked",
+            description=f"{member.mention} has been kicked.",
+            color=0xff5555,
+            timestamp=datetime.utcnow()
+        )
+        chat_embed.add_field(name="Reason", value=reason or "None")
+        await interaction.followup.send(embed=chat_embed)
+
+        # Log
+        log_general_action(interaction.guild, "KICK", interaction.user, member, reason)
+
     except discord.Forbidden:
-        await interaction.followup.send("❌ I don't have permission to mute this user. Check my role position!")
+        await interaction.followup.send("Missing permissions.", ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"❌ An error occurred: {e}")
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
+# ────────────────────────────────────────────────
+# /timeout
+# ────────────────────────────────────────────────
+
+@tree.command(name="timeout", description="Timeout a member")
+@app_commands.describe(
+    member="The member to timeout",
+    duration="Duration (e.g. 30m, 2h, 1d)",
+    reason="Reason (optional)"
+)
+@app_commands.default_permissions(moderate_members=True)
+async def timeout(interaction: discord.Interaction, member: discord.Member, duration: str, reason: str = None):
+    await interaction.response.defer(ephemeral=False)
+
+    parsed = parse_timespan(duration)
+    if not parsed:
+        await interaction.followup.send("Invalid duration format. Use e.g. 30m, 2h, 1d, 1w", ephemeral=True)
+        return
+
+    if parsed > timedelta(days=28):
+        await interaction.followup.send("Maximum timeout is 28 days.", ephemeral=True)
+        return
+
+    try:
+        await member.timeout(parsed, reason=reason)
+
+        # DM to user
+        dm_embed = discord.Embed(
+            title="Timed Out",
+            description=f"You were timed out in **{interaction.guild.name}**.",
+            color=0xffaa00,
+            timestamp=datetime.utcnow()
+        )
+        dm_embed.add_field(name="Duration", value=duration)
+        dm_embed.add_field(name="Reason", value=reason or "None")
+        dm_embed.set_footer(text=f"By {interaction.user}")
+        try:
+            await member.send(embed=dm_embed)
+        except:
+            pass
+
+        # Public reply
+        chat_embed = discord.Embed(
+            title="Member Timed Out",
+            description=f"{member.mention} has been timed out for {duration}.",
+            color=0xffaa00,
+            timestamp=datetime.utcnow()
+        )
+        chat_embed.add_field(name="Reason", value=reason or "None")
+        await interaction.followup.send(embed=chat_embed)
+
+        # Log
+        log_timeout_action(interaction.guild, interaction.user, member, round(parsed.total_seconds()/60), reason)
+
+    except discord.Forbidden:
+        await interaction.followup.send("Missing permissions.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
+# ────────────────────────────────────────────────
+# /unmute
+# ────────────────────────────────────────────────
 
 @tree.command(name="unmute", description="Remove timeout from a user")
-@app_commands.default_permissions(moderate_members=True)
 @app_commands.describe(member="User to unmute", reason="Reason (optional)")
-async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = None):
-    try:
-        if member.top_role >= interaction.guild.me.top_role or member.top_role >= interaction.user.top_role:
-            await interaction.response.send_message("Cannot unmute (hierarchy).", ephemeral=True)
-            return
-        await member.timeout(None, reason=reason or "No reason")
-        await interaction.response.send_message(f"Unmuted {member.mention}", ephemeral=False)
-        log_timeout_action(interaction.guild, interaction.user, member, None, reason, is_unmute=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("Missing permissions to unmute.", ephemeral=True)
-
-@tree.command(name="warn", description="Warn a user (logs + DM)")
 @app_commands.default_permissions(moderate_members=True)
+async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+    await interaction.response.defer(ephemeral=False)
+
+    try:
+        await member.timeout(None, reason=reason)
+
+        # DM to user
+        dm_embed = discord.Embed(
+            title="Timeout Removed",
+            description=f"Your timeout was removed in **{interaction.guild.name}**.",
+            color=0x55ff55,
+            timestamp=datetime.utcnow()
+        )
+        dm_embed.add_field(name="Reason", value=reason or "None")
+        dm_embed.set_footer(text=f"By {interaction.user}")
+        try:
+            await member.send(embed=dm_embed)
+        except:
+            pass
+
+        # Public reply
+        chat_embed = discord.Embed(
+            title="Member Unmuted",
+            description=f"{member.mention} has been unmuted.",
+            color=0x55ff55,
+            timestamp=datetime.utcnow()
+        )
+        chat_embed.add_field(name="Reason", value=reason or "None")
+        await interaction.followup.send(embed=chat_embed)
+
+        # Log
+        log_timeout_action(interaction.guild, interaction.user, member, None, reason, is_unmute=True)
+
+    except discord.Forbidden:
+        await interaction.followup.send("Missing permissions.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
+# ────────────────────────────────────────────────
+# /warn
+# ────────────────────────────────────────────────
+
+@tree.command(name="warn", description="Warn a user")
 @app_commands.describe(member="User to warn", reason="Reason (optional)")
-async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+@app_commands.default_permissions(moderate_members=True)
+async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     guild_data = get_guild_data(interaction.guild_id)
     guild_data.setdefault("warnings", {})
-    if str(member.id) not in guild_data["warnings"]:
-        guild_data["warnings"][str(member.id)] = []
-    warning = {"reason": reason or "No reason", "timestamp": datetime.utcnow().isoformat(), "by": str(interaction.user.id)}
-    guild_data["warnings"][str(member.id)].append(warning)
-    save_data(bot_data)
-    count = len(guild_data["warnings"][str(member.id)])
-    await interaction.response.send_message(f"{member.mention} warned (total: {count})", ephemeral=False)
-    warn_history_log[interaction.guild_id].append({
-        "target": member.name,
-        "target_id": str(member.id),
-        "warner": interaction.user.name,
-        "warner_id": str(interaction.user.id),
-        "reason": reason or "No reason",
-        "timestamp": datetime.utcnow().isoformat()
-    })
-    if len(warn_history_log[interaction.guild_id]) > 50:
-        warn_history_log[interaction.guild_id] = warn_history_log[interaction.guild_id][-50:]
-    try:
-        embed = discord.Embed(title="Warning Received", description=f"In **{interaction.guild.name}**", color=0xffaa00)
-        embed.add_field(name="Reason", value=reason or "No reason", inline=False)
-        embed.add_field(name="Total Warnings", value=count, inline=False)
-        await member.send(embed=embed)
-    except:
-        await interaction.followup.send(f"Could not DM {member.mention}", ephemeral=True)
-    log_warn_action(interaction.guild, interaction.user, member, reason)
 
-@tree.command(name="view_join_role", description="See the current auto-join role")
-@app_commands.default_permissions(administrator=True)
-async def view_join_role(interaction: discord.Interaction):
-    guild_data = get_guild_data(interaction.guild_id)
-    role_id = guild_data.get("join_role_id")
-    if role_id:
-        role = interaction.guild.get_role(role_id)
-        if role:
-            await interaction.response.send_message(f"Current auto-join role: {role.mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message("Role ID set but role not found.", ephemeral=True)
+    uid = str(member.id)
+    if uid not in guild_data["warnings"]:
+        guild_data["warnings"][uid] = []
+
+    warning = {"reason": reason, "timestamp": datetime.utcnow().isoformat(), "by": str(interaction.user.id)}
+    guild_data["warnings"][uid].append(warning)
+    save_data(bot_data)
+
+    count = len(guild_data["warnings"][uid])
+
+    # DM to user
+    dm_embed = discord.Embed(title="Warning Received", description=f"You were warned in **{interaction.guild.name}**.", color=0xffaa00)
+    dm_embed.add_field(name="Reason", value=reason)
+    dm_embed.add_field(name="Total Warnings", value=count)
+    dm_embed.set_footer(text="bot Warning • Further violations may lead to punishment")
+    try:
+        await member.send(embed=dm_embed)
+    except:
+        pass
+
+    # Public reply
+    chat_embed = discord.Embed(title="User Warned", description=f"{member.mention} warned.", color=0xffaa00)
+    chat_embed.add_field(name="Total Warnings", value=count)
+    chat_embed.add_field(name="Reason", value=reason)
+    await interaction.response.send_message(embed=chat_embed)
+
+    # Log
+    warn_log_cid = guild_data.get("warn_log_channel")
+    log_channel = interaction.guild.get_channel(warn_log_cid) if warn_log_cid else None
+    log_embed = discord.Embed(title="Warning Issued", color=0xffaa00)
+    log_embed.add_field(name="Target", value=f"{member} ({member.id})")
+    log_embed.add_field(name="By", value=interaction.user.mention)
+    log_embed.add_field(name="Reason", value=reason)
+    log_embed.add_field(name="Total Warnings", value=count)
+    if log_channel:
+        await log_channel.send(embed=log_embed)
     else:
-        await interaction.response.send_message("No auto-join role set yet.", ephemeral=True)
+        log_general_action(interaction.guild, "WARN", interaction.user, member, reason, f"Total: {count}")
 
 @tree.command(name="warn_history", description="View warning history")
 @app_commands.default_permissions(moderate_members=True)
@@ -1180,6 +1380,70 @@ async def warn_history(interaction: discord.Interaction, member: discord.Member)
         text += f"**#{i}** {w['timestamp'][:10]} by {by_name}\n{w['reason']}\n\n"
     embed.description = text[:2000]
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ────────────────────────────────────────────────
+# /ban
+# ────────────────────────────────────────────────
+
+@tree.command(name="ban", description="Ban a member")
+@app_commands.describe(
+    member="The member to ban",
+    reason="Reason (optional)",
+    delete_days="Delete message history (0-7)"
+)
+@app_commands.default_permissions(ban_members=True)
+async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = None, delete_days: int = 0):
+    await interaction.response.defer(ephemeral=False)
+
+    if not 0 <= delete_days <= 7:
+        await interaction.followup.send("Delete days must be 0-7.", ephemeral=True)
+        return
+
+    try:
+        await member.ban(reason=reason, delete_message_days=delete_days)
+
+        # DM to user
+        dm_embed = discord.Embed(
+            title="Banned",
+            description=f"You were banned from **{interaction.guild.name}**.",
+            color=0xff0000,
+            timestamp=datetime.utcnow()
+        )
+        dm_embed.add_field(name="Reason", value=reason or "None")
+        dm_embed.add_field(name="Messages Deleted", value=f"Last {delete_days} day(s)")
+        dm_embed.set_footer(text=f"By {interaction.user}")
+        try:
+            await member.send(embed=dm_embed)
+        except:
+            pass
+
+        # Public reply
+        chat_embed = discord.Embed(
+            title="Member Banned",
+            description=f"{member.mention} has been banned.",
+            color=0xff0000,
+            timestamp=datetime.utcnow()
+        )
+        chat_embed.add_field(name="Reason", value=reason or "None")
+        chat_embed.add_field(name="Messages Deleted", value=f"Last {delete_days} day(s)")
+        await interaction.followup.send(embed=chat_embed)
+
+        # Log
+        guild_data = get_guild_data(interaction.guild_id)
+        cid = guild_data.get("ban_log_channel") or guild_data.get("log_channel")
+        channel = interaction.guild.get_channel(cid)
+        if channel:
+            log_embed = discord.Embed(title="Ban Log", color=0xff0000)
+            log_embed.add_field(name="Target", value=f"{member} ({member.id})")
+            log_embed.add_field(name="By", value=interaction.user.mention)
+            log_embed.add_field(name="Reason", value=reason or "None")
+            log_embed.add_field(name="Delete Days", value=delete_days)
+            await channel.send(embed=log_embed)
+
+    except discord.Forbidden:
+        await interaction.followup.send("Missing permissions.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
 @tree.command(name="clear", description="Delete recent messages")
 @app_commands.default_permissions(manage_messages=True)
@@ -1402,7 +1666,7 @@ async def aipickup(interaction: discord.Interaction, target: discord.Member = No
 # ────────────────────────────────────────────────
 @tree.command(name="help", description="Show all commands")
 async def help_command(interaction: discord.Interaction):
-    embed = discord.Embed(title="JackBot Commands", color=0x5865F2)
+    embed = discord.Embed(title="bot Commands", color=0x5865F2)
     embed.add_field(name="Moderation & Setup", value=(
         "`/set_welcome` `/set_welcome_message` `/set_log` `/set_timeout_log` `/set_ban_log` `/set_warn_log` `/set_autorole_log` `/set_delete_log` `/log_settings` `/setupverify` `/set_join_role` `/view_join_role`"
         "`/kick` `/mute` `/unmute` `/warn` `/warn_history` `/clear` "
@@ -1418,7 +1682,7 @@ async def help_command(interaction: discord.Interaction):
         "`/say` `/8ball` `/coinflip` `/dice` `/joke` "
         "`/airoast` `/aipickup` `/poll` `/set_starboard` `/rr`"
     ), inline=False)
-    embed.set_footer(text="JackBot • March 2026")
+    embed.set_footer(text="bot • March 2026")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ────────────────────────────────────────────────
