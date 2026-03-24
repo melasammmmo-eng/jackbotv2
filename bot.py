@@ -301,7 +301,7 @@ def get_guild_data(guild_id):
         }
     return bot_data[gid]
 # ────────────────────────────────────────────────
-# Setup Commands (Run these once to select channel)
+# 1. Setup the channels (run once)
 # ────────────────────────────────────────────────
 
 @tree.command(name="setgiveawaychannel", description="Set the default channel for /giveaway")
@@ -311,7 +311,7 @@ async def setgiveawaychannel(interaction: discord.Interaction, channel: discord.
     guild_data = get_guild_data(interaction.guild_id)
     guild_data["giveaway_channel"] = channel.id
     save_data(bot_data)
-    await interaction.response.send_message(f"✅ Giveaway channel saved as {channel.mention}", ephemeral=True)
+    await interaction.response.send_message(f"✅ Giveaway channel saved: {channel.mention}", ephemeral=True)
 
 
 @tree.command(name="setsquidchannel", description="Set the default channel for /squidgames")
@@ -321,65 +321,102 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
     guild_data = get_guild_data(interaction.guild_id)
     guild_data["squidgames_channel"] = channel.id
     save_data(bot_data)
-    await interaction.response.send_message(f"✅ Squid Games channel saved as {channel.mention}", ephemeral=True)
+    await interaction.response.send_message(f"✅ Squid Games channel saved: {channel.mention}", ephemeral=True)
 
 
 # ────────────────────────────────────────────────
-# /giveaway - No channel needed, uses saved channel
+# 2. Main commands (no channel needed)
 # ────────────────────────────────────────────────
 
-@tree.command(name="giveaway", description="Send the giveaway message (uses saved channel)")
+@tree.command(name="giveaway", description="Send giveaway message (uses saved channel)")
 @app_commands.default_permissions(manage_messages=True)
 async def giveaway(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild_id)
     channel_id = guild_data.get("giveaway_channel")
 
     if not channel_id:
-        await interaction.response.send_message("❌ No giveaway channel set yet.\nUse `/setgiveawaychannel` first.", ephemeral=True)
+        await interaction.response.send_message("❌ No giveaway channel set.\nUse `/setgiveawaychannel` first.", ephemeral=True)
         return
 
     channel = interaction.guild.get_channel(channel_id)
     if not channel:
-        await interaction.response.send_message("❌ Saved giveaway channel not found. Set it again.", ephemeral=True)
+        await interaction.response.send_message("❌ Saved channel not found. Set it again.", ephemeral=True)
         return
 
-    giveaway_text = "@everyone 🎉 **GIVEAWAY TIME!**\nReact with 🎉 to enter!\nWinner picked soon!"
+    text = "@everyone 🎉 **GIVEAWAY TIME!**\nReact with 🎉 to enter!\nWinner picked soon!"
 
     try:
-        msg = await channel.send(giveaway_text)
+        msg = await channel.send(text)
         await msg.add_reaction("🎉")
         await interaction.response.send_message(f"✅ Giveaway sent in {channel.mention}", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error sending giveaway: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
 
-# ────────────────────────────────────────────────
-# /squidgames - No channel needed, uses saved channel
-# ────────────────────────────────────────────────
-
-@tree.command(name="squidgames", description="Send the Squid Games message (uses saved channel)")
+@tree.command(name="squidgames", description="Send Squid Games message (uses saved channel)")
 @app_commands.default_permissions(manage_messages=True)
 async def squidgames(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild_id)
     channel_id = guild_data.get("squidgames_channel")
 
     if not channel_id:
-        await interaction.response.send_message("❌ No Squid Games channel set yet.\nUse `/setsquidchannel` first.", ephemeral=True)
+        await interaction.response.send_message("❌ No Squid Games channel set.\nUse `/setsquidchannel` first.", ephemeral=True)
         return
 
     channel = interaction.guild.get_channel(channel_id)
     if not channel:
-        await interaction.response.send_message("❌ Saved Squid Games channel not found. Set it again.", ephemeral=True)
+        await interaction.response.send_message("❌ Saved channel not found. Set it again.", ephemeral=True)
         return
 
-    squid_text = "@everyone 🎮 **SQUID GAMES EVENT!**\nReact with 🎮 to join!\nLast player standing wins!"
+    text = "@everyone 🎮 **SQUID GAMES EVENT!**\nReact with 🎮 to join!\nLast player standing wins!"
 
     try:
-        msg = await channel.send(squid_text)
+        msg = await channel.send(text)
         await msg.add_reaction("🎮")
         await interaction.response.send_message(f"✅ Squid Games sent in {channel.mention}", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error sending Squid Games: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
+
+# ────────────────────────────────────────────────
+# 3. Edit commands (still need to select channel)
+# ────────────────────────────────────────────────
+
+@tree.command(name="editgiveaway", description="Edit the last giveaway message")
+@app_commands.describe(
+    channel="Channel where the giveaway is",
+    new_text="New text you want to replace with"
+)
+@app_commands.default_permissions(manage_messages=True)
+async def editgiveaway(interaction: discord.Interaction, channel: discord.TextChannel, new_text: str):
+    try:
+        async for message in channel.history(limit=30):
+            if message.author == bot.user and "GIVEAWAY" in message.content.upper():
+                await message.edit(content=new_text)
+                await interaction.response.send_message(f"✅ Giveaway edited in {channel.mention}", ephemeral=True)
+                return
+        await interaction.response.send_message("❌ No recent giveaway message found in that channel.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
+
+@tree.command(name="editsquidgames", description="Edit the last Squid Games message")
+@app_commands.describe(
+    channel="Channel where the Squid Games message is",
+    new_text="New text you want to replace with"
+)
+@app_commands.default_permissions(manage_messages=True)
+async def editsquidgames(interaction: discord.Interaction, channel: discord.TextChannel, new_text: str):
+    try:
+        async for message in channel.history(limit=30):
+            if message.author == bot.user and "SQUID GAMES" in message.content.upper():
+                await message.edit(content=new_text)
+                await interaction.response.send_message(f"✅ Squid Games edited in {channel.mention}", ephemeral=True)
+                return
+        await interaction.response.send_message("❌ No recent Squid Games message found in that channel.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+        
 # ────────────────────────────────────────────────
 # Moderation Logging Helpers
 # ────────────────────────────────────────────────
