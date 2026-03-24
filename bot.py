@@ -302,90 +302,84 @@ def get_guild_data(guild_id):
     return bot_data[gid]
 
 # ────────────────────────────────────────────────
-# /giveaway - Send text in a chosen channel
+# /giveaway - Just choose channel → sends text automatically
 # ────────────────────────────────────────────────
 
-@tree.command(name="giveaway", description="Send a giveaway message in a channel")
-@app_commands.describe(
-    channel="Channel to send the message to",
-    text="The text/message you want to send"
-)
+@tree.command(name="giveaway", description="Send the giveaway message in a channel")
+@app_commands.describe(channel="Channel to send giveaway to")
 @app_commands.default_permissions(manage_messages=True)
-async def giveaway(interaction: discord.Interaction, channel: discord.TextChannel, text: str):
+async def giveaway(interaction: discord.Interaction, channel: discord.TextChannel):
+    giveaway_text = "@everyone 🎉 **GIVEAWAY TIME!**\nReact with 🎉 to enter!\nWinner will be picked soon!"
+
     try:
-        msg = await channel.send(text)
-        await interaction.response.send_message(f"✅ Giveaway message sent in {channel.mention}\nMessage ID: {msg.id}", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to send messages in that channel.", ephemeral=True)
+        msg = await channel.send(giveaway_text)
+        await msg.add_reaction("🎉")
+        await interaction.response.send_message(f"✅ Giveaway sent in {channel.mention}", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
+
 # ────────────────────────────────────────────────
-# /editgiveaway - Edit the last giveaway message
+# /editgiveaway - Just choose channel → edits the last bot message
 # ────────────────────────────────────────────────
 
-@tree.command(name="editgiveaway", description="Edit the last giveaway message sent by the bot")
+@tree.command(name="editgiveaway", description="Edit the last giveaway message in a channel")
 @app_commands.describe(
-    channel="Channel where the giveaway was sent",
+    channel="Channel where giveaway was sent",
     new_text="New text to replace the old message"
 )
 @app_commands.default_permissions(manage_messages=True)
 async def editgiveaway(interaction: discord.Interaction, channel: discord.TextChannel, new_text: str):
     try:
-        async for message in channel.history(limit=50):
-            if message.author == bot.user and message.content:  # Find last message sent by bot
+        async for message in channel.history(limit=30):
+            if message.author == bot.user:   # Find last message sent by the bot
                 await message.edit(content=new_text)
-                await interaction.response.send_message(f"✅ Giveaway message edited in {channel.mention}", ephemeral=True)
+                await interaction.response.send_message(f"✅ Giveaway edited in {channel.mention}", ephemeral=True)
                 return
-        await interaction.response.send_message("❌ No recent giveaway message found in that channel.", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to edit messages in that channel.", ephemeral=True)
+        await interaction.response.send_message("❌ No recent bot message found in that channel.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
+
 # ────────────────────────────────────────────────
-# /squidgames - Send text in a chosen channel
+# /squidgames - Just choose channel → sends text automatically
 # ────────────────────────────────────────────────
 
-@tree.command(name="squidgames", description="Send a Squid Games message in a channel")
-@app_commands.describe(
-    channel="Channel to send the message to",
-    text="The text/message you want to send"
-)
+@tree.command(name="squidgames", description="Send the Squid Games message in a channel")
+@app_commands.describe(channel="Channel to send Squid Games message to")
 @app_commands.default_permissions(manage_messages=True)
-async def squidgames(interaction: discord.Interaction, channel: discord.TextChannel, text: str):
+async def squidgames(interaction: discord.Interaction, channel: discord.TextChannel):
+    squid_text = "@everyone 🎮 **SQUID GAMES EVENT!**\nReact with 🎮 to join the next round!\nLast player standing wins!"
+
     try:
-        msg = await channel.send(text)
-        await interaction.response.send_message(f"✅ Squid Games message sent in {channel.mention}\nMessage ID: {msg.id}", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to send messages in that channel.", ephemeral=True)
+        msg = await channel.send(squid_text)
+        await msg.add_reaction("🎮")
+        await interaction.response.send_message(f"✅ Squid Games message sent in {channel.mention}", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
+
 # ────────────────────────────────────────────────
-# /editsquidgames - Edit the last Squid Games message
+# /editsquidgames - Just choose channel → edits the last bot message
 # ────────────────────────────────────────────────
 
-@tree.command(name="editsquidgames", description="Edit the last Squid Games message sent by the bot")
+@tree.command(name="editsquidgames", description="Edit the last Squid Games message in a channel")
 @app_commands.describe(
-    channel="Channel where the Squid Games message was sent",
+    channel="Channel where Squid Games message was sent",
     new_text="New text to replace the old message"
 )
 @app_commands.default_permissions(manage_messages=True)
 async def editsquidgames(interaction: discord.Interaction, channel: discord.TextChannel, new_text: str):
     try:
-        async for message in channel.history(limit=50):
-            if message.author == bot.user and message.content:
+        async for message in channel.history(limit=30):
+            if message.author == bot.user:
                 await message.edit(content=new_text)
                 await interaction.response.send_message(f"✅ Squid Games message edited in {channel.mention}", ephemeral=True)
                 return
-        await interaction.response.send_message("❌ No recent Squid Games message found in that channel.", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to edit messages in that channel.", ephemeral=True)
+        await interaction.response.send_message("❌ No recent bot message found in that channel.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
-
-
+        
 # ────────────────────────────────────────────────
 # Moderation Logging Helpers
 # ────────────────────────────────────────────────
