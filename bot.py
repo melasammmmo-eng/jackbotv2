@@ -343,7 +343,7 @@ async def giveaway(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Saved channel not found. Set it again.", ephemeral=True)
         return
 
-    text = "@everyone 🎉 **GIVEAWAY TIME!**\nReact with 🎉 to enter!\nWinner picked soon!"
+    text = "@everyone jack23 🎉 **GIVEAWAY TIME!**\nReact with 🎉 if you join"
 
     try:
         msg = await channel.send(text)
@@ -368,7 +368,7 @@ async def squidgames(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Saved channel not found. Set it again.", ephemeral=True)
         return
 
-    text = "@everyone 🎮 **SQUID GAMES EVENT!**\nReact with 🎮 to join!\nLast player standing wins!"
+    text = "@everyone jack23  🎮 **SQUID GAMES EVENT!**\nReact with 🎮 if your joining"
 
     try:
         msg = await channel.send(text)
