@@ -21,6 +21,8 @@ def parse_timespan(timespan: str):
     for amount, unit in matches:
         time_params[unit_map[unit]] += int(amount)
     return timedelta(**time_params)
+    
+import io
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -1068,6 +1070,190 @@ async def removewarn(interaction: discord.Interaction, member: discord.Member, w
     else:
         log_general_action(interaction.guild, "REMOVE WARNING", interaction.user, member, removed["reason"], f"#{warn_number} | Remaining: {len(warnings)}")
 
+
+
+# ────────────────────────────────────────────────
+# Ticket System
+# ────────────────────────────────────────────────
+
+# Persistent View for Ticket Buttons
+class TicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)  # Persistent
+
+    @discord.ui.button(label="📩 Create Ticket", style=discord.ButtonStyle.blurple, custom_id="create_ticket")
+    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_data = get_guild_data(interaction.guild_id)
+        ticket_data = guild_data.setdefault("tickets", {})
+        
+        support_role_id = ticket_data.get("support_role_id")
+        if not support_role_id:
+            await interaction.response.send_message("Ticket system not fully configured. Ask an admin to set support role.", ephemeral=True)
+            return
+
+        # Modal for ticket reason
+        class TicketModal(discord.ui.Modal, title="Create a Support Ticket"):
+            issue = discord.ui.TextInput(label="Describe your issue", style=discord.TextStyle.paragraph, required=True, max_length=1000)
+
+            async def on_submit(self, modal_inter: discord.Interaction):
+                await modal_inter.response.defer(ephemeral=True)
+
+                guild = modal_inter.guild
+                member = modal_inter.user
+                reason = self.issue.value
+
+                # Create ticket channel
+                category = discord.utils.get(guild.categories, id=ticket_data.get("ticket_category_id"))
+                support_role = guild.get_role(support_role_id)
+                everyone = guild.default_role
+
+                overwrites = {
+                    everyone: discord.PermissionOverwrite(view_channel=False),
+                    member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_messages=True),
+                    guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
+                }
+                if support_role:
+                    overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_messages=True)
+
+                try:
+                    channel_name = f"ticket-{member.name}"[:97]
+                    ticket_channel = await guild.create_text_channel(
+                        name=channel_name,
+                        category=category,
+                        overwrites=overwrites,
+                        reason=f"Ticket created by {member}"
+                    )
+
+                    # Welcome message in ticket
+                    embed = discord.Embed(
+                        title="🎟️ New Ticket",
+                        description=f"**User:** {member.mention}\n**Reason:** {reason}",
+                        color=0x00ff00,
+                        timestamp=datetime.utcnow()
+                    )
+                    embed.set_footer(text=f"Ticket ID: {ticket_channel.id}")
+
+                    ticket_view = TicketControlView(ticket_channel, member, support_role)
+                    await ticket_channel.send(embed=embed, view=ticket_view)
+                    await ticket_channel.send(f"{member.mention} | {support_role.mention if support_role else ''}")
+
+                    await modal_inter.followup.send(f"✅ Your ticket has been created: {ticket_channel.mention}", ephemeral=True)
+
+                except Exception as e:
+                    await modal_inter.followup.send(f"❌ Failed to create ticket: {str(e)}", ephemeral=True)
+
+        await interaction.response.send_modal(TicketModal())
+
+
+class TicketControlView(discord.ui.View):
+    def __init__(self, channel: discord.TextChannel, creator: discord.Member, support_role=None):
+        super().__init__(timeout=None)
+        self.channel = channel
+        self.creator = creator
+        self.support_role = support_role
+        self.claimed_by = None
+
+    @discord.ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.creator and (self.support_role and self.support_role not in interaction.user.roles):
+            await interaction.response.send_message("You don't have permission to close this ticket.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        # Save transcript
+        transcript = []
+        async for msg in self.channel.history(limit=1000):
+            transcript.append(f"[{msg.created_at.strftime('%Y-%m-%d %H:%M')}] {msg.author}: {msg.content}")
+
+        transcript_text = "\n".join(reversed(transcript))
+        file = discord.File(fp=io.BytesIO(transcript_text.encode()), filename=f"transcript-{self.channel.name}.txt")
+
+        # Notify and delete channel
+        try:
+            await self.channel.send("🔒 Ticket is being closed...")
+            log_channel = interaction.guild.get_channel(get_guild_data(interaction.guild_id)["tickets"].get("log_channel_id"))
+            if log_channel:
+                await log_channel.send(f"Ticket {self.channel.name} closed by {interaction.user.mention}", file=file)
+        except:
+            pass
+
+        await asyncio.sleep(3)
+        await self.channel.delete(reason="Ticket closed")
+
+    @discord.ui.button(label="🙋 Claim Ticket", style=discord.ButtonStyle.green, custom_id="claim_ticket")
+    async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.support_role and self.support_role not in interaction.user.roles:
+            await interaction.response.send_message("Only support staff can claim tickets.", ephemeral=True)
+            return
+
+        self.claimed_by = interaction.user
+        await interaction.response.send_message(f"✅ Ticket claimed by {interaction.user.mention}", ephemeral=False)
+        # You can disable the button or change color if desired
+
+    @discord.ui.button(label="✏️ Rename", style=discord.ButtonStyle.gray, custom_id="rename_ticket")
+    async def rename_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.creator and not (self.support_role and self.support_role in interaction.user.roles):
+            await interaction.response.send_message("No permission.", ephemeral=True)
+            return
+
+        class RenameModal(discord.ui.Modal, title="Rename Ticket"):
+            new_name = discord.ui.TextInput(label="New ticket name", required=True, max_length=90)
+
+            async def on_submit(self, modal_inter: discord.Interaction):
+                try:
+                    await self.channel.edit(name=self.new_name.value)
+                    await modal_inter.response.send_message(f"✅ Ticket renamed to `{self.new_name.value}`", ephemeral=True)
+                except:
+                    await modal_inter.response.send_message("Failed to rename.", ephemeral=True)
+
+        await interaction.response.send_modal(RenameModal())
+
+
+# Setup Command
+@tree.command(name="setticketpanel", description="Create a ticket creation panel")
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(
+    channel="Channel to send the panel to",
+    support_role="Role that can manage tickets",
+    ticket_category="Category where tickets will be created (optional)",
+    log_channel="Channel for ticket logs/transcripts (optional)"
+)
+async def setticketpanel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel,
+    support_role: discord.Role,
+    ticket_category: discord.CategoryChannel = None,
+    log_channel: discord.TextChannel = None
+):
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data.setdefault("tickets", {
+        "support_role_id": None,
+        "ticket_category_id": None,
+        "log_channel_id": None
+    })
+
+    guild_data["tickets"]["support_role_id"] = support_role.id
+    if ticket_category:
+        guild_data["tickets"]["ticket_category_id"] = ticket_category.id
+    if log_channel:
+        guild_data["tickets"]["log_channel_id"] = log_channel.id
+
+    save_data(bot_data)
+
+    embed = discord.Embed(
+        title="🎟️ Support Tickets",
+        description="Click the button below to create a ticket.\nOur staff will help you as soon as possible.",
+        color=0x5865F2
+    )
+    embed.set_footer(text="Tickets • Private support")
+
+    view = TicketView()
+    await channel.send(embed=embed, view=view)
+
+    await interaction.response.send_message(f"✅ Ticket panel created in {channel.mention}!\nSupport role: {support_role.mention}", ephemeral=True)
+
+    
 # ────────────────────────────────────────────────
 # Badword Ignore Commands
 # ────────────────────────────────────────────────
