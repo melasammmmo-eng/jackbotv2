@@ -70,6 +70,57 @@ bot = commands.Bot(
 
 tree = bot.tree  # THIS LINE FIXES THE NameError
 
+
+import discord
+from discord.ext import commands
+import openai
+import os
+
+intents = discord.Intents.default()
+intents.message_content = True  # VERY important for reading messages
+bot = commands.Bot(command_prefix="/", intents=intents)
+
+# Set your OpenAI API key
+openai.api_key = os.getenv("OPENAI_API_KEY")  # or just put it as a string
+
+# Store AI chat channel ID
+ai_chat_channel_id = None
+
+# Slash command to set the AI chat channel
+@bot.slash_command(name="set_ai_channel", description="Set the channel for AI chat")
+async def set_ai_channel(ctx: discord.ApplicationContext, channel: discord.TextChannel):
+    global ai_chat_channel_id
+    ai_chat_channel_id = channel.id
+    await ctx.respond(f"✅ AI chat is now active in {channel.mention}")
+
+# Listener for messages in the AI channel
+@bot.event
+async def on_message(message):
+    global ai_chat_channel_id
+
+    # Ignore bot messages
+    if message.author.bot:
+        return
+
+    # Only respond in the AI channel
+    if ai_chat_channel_id is None or message.channel.id != ai_chat_channel_id:
+        return
+
+    # Send typing indicator
+    async with message.channel.typing():
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": message.content}
+                ]
+            )
+            reply = response.choices[0].message.content
+            await message.reply(reply)
+        except Exception as e:
+            await message.reply(f"❌ Error: {e}")
+
 # ────────────────────────────────────────────────
 # Nuke Autocomplete (unchanged - keep it)
 # ────────────────────────────────────────────────
