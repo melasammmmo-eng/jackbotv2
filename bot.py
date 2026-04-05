@@ -26,6 +26,20 @@ def parse_timespan(timespan: str):
     
 import io
 
+
+# ─────────────────────────────
+# OPENAI SETUP
+# ─────────────────────────────
+import os
+import discord
+from discord import app_commands
+from discord.ext import commands
+import openai
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+
+
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID") # e.g. 1476039725319061648
@@ -377,18 +391,6 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
     guild_data["squidgames_channel"] = channel.id
     save_data(bot_data)
     await interaction.response.send_message(f"✅ Squid Games channel saved: {channel.mention}", ephemeral=True)
-
-
-# ─────────────────────────────
-# OPENAI SETUP
-# ─────────────────────────────
-import os
-import discord
-from discord import app_commands
-from discord.ext import commands
-import openai
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # ─────────────────────────────
 # BOT SETUP
