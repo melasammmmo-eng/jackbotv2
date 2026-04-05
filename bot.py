@@ -11,6 +11,8 @@ import asyncio
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 import re
+from dotenv import load_dotenv
+load_dotenv()
 from typing import Optional
 def parse_timespan(timespan: str):
     pattern = re.compile(r"(\d+)([dhms])")
