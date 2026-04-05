@@ -328,138 +328,116 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
     await interaction.response.send_message(f"✅ Squid Games channel saved: {channel.mention}", ephemeral=True)
 
 
-# ────────────────────────────────────────────────
-# AI SYSTEM SETUP
-# ────────────────────────────────────────────────
-
+# ─────────────────────────────
+# OPENAI SETUP
+# ─────────────────────────────
+import os
+import discord
+from discord import app_commands
+from discord.ext import commands
 import openai
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# ────────────────────────────────────────────────
-# ADD THIS TO YOUR get_guild_data() DEFAULTS
-# ────────────────────────────────────────────────
-# "ai": {
-#     "enabled": False,
-#     "channel_id": None,
-#     "mod_enabled": False
-# }
+# ─────────────────────────────
+# BOT SETUP
+# ─────────────────────────────
+intents = discord.Intents.default()
+intents.messages = True
+intents.guilds = True
+intents.message_content = True
 
-# ────────────────────────────────────────────────
-# AI RESPONSE FUNCTION
-# ────────────────────────────────────────────────
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-async def get_ai_response(prompt: str):
-    try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful Discord bot. Keep replies short, clean, and not annoying."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"AI Error: {e}"
+# ─────────────────────────────
+# AI CONFIG STORAGE (in-memory)
+# ─────────────────────────────
+guild_ai_settings = {}  # {guild_id: {"channel_id": int, "mod_enabled": bool, "enabled": bool}}
 
-# ────────────────────────────────────────────────
-# COMMAND: SET AI CHANNEL
-# ────────────────────────────────────────────────
-
-@tree.command(name="set_ai_channel", description="Set AI chat channel")
-@app_commands.default_permissions(administrator=True)
+# ─────────────────────────────
+# SLASH COMMAND TO SET AI CHANNEL
+# ─────────────────────────────
+@bot.tree.command(name="set_ai_channel", description="Set the channel for AI chat")
+@app_commands.describe(channel="The channel where AI will respond")
 async def set_ai_channel(interaction: discord.Interaction, channel: discord.TextChannel):
-    guild_data = get_guild_data(interaction.guild_id)
+    guild_id = interaction.guild.id
+    if guild_id not in guild_ai_settings:
+        guild_ai_settings[guild_id] = {}
+    guild_ai_settings[guild_id]["channel_id"] = channel.id
+    guild_ai_settings[guild_id]["enabled"] = True
+    await interaction.response.send_message(f"AI chat channel set to {channel.mention}", ephemeral=True)
 
-    guild_data["ai"]["channel_id"] = channel.id
-    guild_data["ai"]["enabled"] = True
+# ─────────────────────────────
+# SLASH COMMAND TO TOGGLE AI MODERATION
+# ─────────────────────────────
+@bot.tree.command(name="ai_mod", description="Enable or disable AI moderation")
+@app_commands.describe(toggle="Enable (true) or disable (false) AI moderation")
+async def ai_mod(interaction: discord.Interaction, toggle: bool):
+    guild_id = interaction.guild.id
+    if guild_id not in guild_ai_settings:
+        guild_ai_settings[guild_id] = {}
+    guild_ai_settings[guild_id]["mod_enabled"] = toggle
+    status = "enabled" if toggle else "disabled"
+    await interaction.response.send_message(f"AI moderation {status}", ephemeral=True)
 
-    save_data(bot_data)
+# ─────────────────────────────
+# ON MESSAGE HANDLER FOR AI CHAT
+# ─────────────────────────────
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot or not message.guild:
+        return
 
-    await interaction.response.send_message(
-        f"AI chat enabled in {channel.mention}",
-        ephemeral=True
-    )
+    guild_id = message.guild.id
+    ai_data = guild_ai_settings.get(guild_id, {})
 
-# ────────────────────────────────────────────────
-# COMMAND: TOGGLE AI MODERATION
-# ────────────────────────────────────────────────
-
-@tree.command(name="ai_mod", description="Toggle AI moderation")
-@app_commands.default_permissions(administrator=True)
-async def ai_mod(interaction: discord.Interaction, enabled: bool):
-    guild_data = get_guild_data(interaction.guild_id)
-
-    guild_data["ai"]["mod_enabled"] = enabled
-    save_data(bot_data)
-
-    status = "enabled" if enabled else "disabled"
-
-    await interaction.response.send_message(
-        f"AI moderation {status}.",
-        ephemeral=True
-    )
-
-# ────────────────────────────────────────────────
-# COMMAND: ASK AI
-# ────────────────────────────────────────────────
-
-@tree.command(name="ai", description="Ask AI anything")
-async def ai(interaction: discord.Interaction, prompt: str):
-    await interaction.response.defer()
-
-    reply = await get_ai_response(prompt)
-
-    await interaction.followup.send(reply[:2000])
-
-# ────────────────────────────────────────────────
-# AI MESSAGE HANDLER (PUT INSIDE on_message)
-# ────────────────────────────────────────────────
-
-# ADD THIS INSIDE YOUR EXISTING on_message EVENT
-# (BEFORE await bot.process_commands(message))
-
-guild_data = get_guild_data(message.guild.id)
-ai_data = guild_data.get("ai", {})
-
-# ───── AI MODERATION ─────
-if ai_data.get("mod_enabled"):
-    try:
-        mod_check = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Is this message harmful, toxic, spam, or inappropriate? Reply only YES or NO."},
-                {"role": "user", "content": message.content}
-            ]
-        )
-
-        result = mod_check.choices[0].message.content.lower()
-
-        if "yes" in result:
-            await message.delete()
-            await message.channel.send(
-                f"{message.author.mention}, your message was removed by AI moderation.",
-                delete_after=5
+    # ───────────── AI MODERATION ─────────────
+    if ai_data.get("mod_enabled"):
+        try:
+            mod_check = await openai.ChatCompletion.acreate(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Determine if this message is harmful, toxic, spam, or inappropriate. Reply ONLY with YES or NO."
+                    },
+                    {"role": "user", "content": message.content}
+                ]
             )
-            return
+            result = mod_check.choices[0].message.content.lower()
+            if "yes" in result:
+                await message.delete()
+                await message.channel.send(f"{message.author.mention}, your message was removed by AI moderation.", delete_after=5)
+                return
+        except Exception as e:
+            print(f"[AI MOD ERROR] {e}")
 
-    except Exception as e:
-        print(f"AI Mod Error: {e}")
+    # ───────────── AI CHAT ─────────────
+    if ai_data.get("enabled") and message.channel.id == ai_data.get("channel_id"):
+        try:
+            async with message.channel.typing():
+                response = await openai.ChatCompletion.acreate(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful Discord bot. Keep replies short and clean."},
+                        {"role": "user", "content": message.content}
+                    ]
+                )
+            reply = response.choices[0].message.content
+            await message.reply(reply[:2000])
+        except Exception as e:
+            await message.channel.send(f"AI Error: {e}")
 
-# ───── AI AUTO CHAT ─────
-if ai_data.get("enabled") and message.channel.id == ai_data.get("channel_id"):
-    try:
-        async with message.channel.typing():
-            reply = await get_ai_response(message.content)
+    # ───────────── PROCESS OTHER COMMANDS ─────────────
+    await bot.process_commands(message)
 
-        await message.reply(reply[:2000])
-
-    except Exception as e:
-        await message.channel.send(f"AI Error: {e}")
-
-
-
-
+# ─────────────────────────────
+# SYNC SLASH COMMANDS ON READY
+# ─────────────────────────────
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Logged in as {bot.user}")
 # ────────────────────────────────────────────────
 # 2. Main commands (no channel needed)
 # ────────────────────────────────────────────────
