@@ -34,14 +34,19 @@ def parse_timespan(timespan: str):
 # ─────────────────────────────
 # OPENAI SETUP
 # ─────────────────────────────
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 if not OPENAI_API_KEY:
     print("Warning: OPENAI_API_KEY is not set.")
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-TOKEN = os.getenv("TOKEN")
-GUILD_ID = os.getenv("GUILD_ID") # e.g. 1476039725319061648
+TOKEN = os.getenv("TOKEN", "").strip()
+GUILD_ID = os.getenv("GUILD_ID", "").strip()  # e.g. 1476039725319061648
+if not TOKEN:
+    print("Warning: TOKEN is not set.")
+if GUILD_ID:
+    print(f"Configured GUILD_ID: {GUILD_ID}")
+
 DATA_FILE = "bot_data.json"
 
 # Nuke command configuration
@@ -266,15 +271,25 @@ COLOR_MAP = {
 async def on_ready():
     print("Starting Bot...")
     ping_tasks.clear()
-   
-    try:
-        if GUILD_ID:
+
+    print("Connected guild IDs:", [g.id for g in bot.guilds])
+    if GUILD_ID:
+        try:
             guild = discord.Object(id=int(GUILD_ID))
+        except ValueError:
+            guild = None
+            print(f"Invalid GUILD_ID value: {GUILD_ID!r}")
+    else:
+        guild = None
+
+    try:
+        if guild:
             synced = await tree.sync(guild=guild)
             print(f"Synced {len(synced)} guild command(s) to {GUILD_ID}")
         else:
             synced = await tree.sync()
             print(f"Synced {len(synced)} global command(s)")
+        print("Registered command names:", [cmd.name for cmd in tree.commands])
     except Exception as e:
         print(f"Sync failed: {e}")
 
