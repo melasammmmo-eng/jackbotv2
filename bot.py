@@ -270,7 +270,6 @@ async def on_ready():
     try:
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
-            tree.copy_global_to(guild=guild)
             synced = await tree.sync(guild=guild)
             print(f"Synced {len(synced)} guild command(s) to {GUILD_ID}")
         else:
@@ -343,21 +342,20 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
     await interaction.response.send_message(f"✅ Squid Games channel saved: {channel.mention}", ephemeral=True)
 
 # ─────────────────────────────
-# AI CONFIG STORAGE (in-memory)
-# ─────────────────────────────
-guild_ai_settings = {}  # {guild_id: {"channel_id": int, "mod_enabled": bool, "enabled": bool}}
-
-# ─────────────────────────────
 # SLASH COMMAND TO SET AI CHANNEL
 # ─────────────────────────────
 @bot.tree.command(name="set_ai_channel", description="Set the channel for AI chat")
 @app_commands.describe(channel="The channel where AI will respond")
 async def set_ai_channel(interaction: discord.Interaction, channel: discord.TextChannel):
-    guild_id = interaction.guild.id
-    if guild_id not in guild_ai_settings:
-        guild_ai_settings[guild_id] = {}
-    guild_ai_settings[guild_id]["channel_id"] = channel.id
-    guild_ai_settings[guild_id]["enabled"] = True
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data.setdefault("ai_settings", {
+        "channel_id": None,
+        "enabled": False,
+        "mod_enabled": False
+    })
+    guild_data["ai_settings"]["channel_id"] = channel.id
+    guild_data["ai_settings"]["enabled"] = True
+    save_data(bot_data)
     await interaction.response.send_message(f"AI chat channel set to {channel.mention}", ephemeral=True)
 
 # ─────────────────────────────
@@ -366,10 +364,14 @@ async def set_ai_channel(interaction: discord.Interaction, channel: discord.Text
 @bot.tree.command(name="ai_mod", description="Enable or disable AI moderation")
 @app_commands.describe(toggle="Enable (true) or disable (false) AI moderation")
 async def ai_mod(interaction: discord.Interaction, toggle: bool):
-    guild_id = interaction.guild.id
-    if guild_id not in guild_ai_settings:
-        guild_ai_settings[guild_id] = {}
-    guild_ai_settings[guild_id]["mod_enabled"] = toggle
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data.setdefault("ai_settings", {
+        "channel_id": None,
+        "enabled": False,
+        "mod_enabled": False
+    })
+    guild_data["ai_settings"]["mod_enabled"] = toggle
+    save_data(bot_data)
     status = "enabled" if toggle else "disabled"
     await interaction.response.send_message(f"AI moderation {status}", ephemeral=True)
 
@@ -388,8 +390,8 @@ async def on_message(message: discord.Message):
     if user_roles & set(guild_data.get("ignored_roles", [])):
         return
 
-    guild_id = message.guild.id
-    ai_data = guild_ai_settings.get(guild_id, {})
+    guild_data = get_guild_data(message.guild.id)
+    ai_data = guild_data.get("ai_settings", {})
 
     # ───────────── AI MODERATION ─────────────
     if ai_data.get("mod_enabled"):
@@ -416,7 +418,7 @@ async def on_message(message: discord.Message):
     if ai_data.get("enabled") and message.channel.id == ai_data.get("channel_id"):
         try:
             async with message.channel.typing():
-                response = await openai.ChatCompletion.acreate(
+                response = await client.chat.completions.acreate(
                     model="gpt-4o-mini",
                     messages=[
                         {"role": "system", "content": "You are a helpful Discord bot. Keep replies short and clean."},
