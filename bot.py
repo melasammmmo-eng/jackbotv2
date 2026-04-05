@@ -1,6 +1,6 @@
 # bot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
 # Run: python bot.py
-import os
+import os565656
 import io
 import json
 import random
