@@ -1,46 +1,45 @@
 # bot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
 # Run: python bot.py
 import os
+import io
+import json
+import random
+import asyncio
+import re
+from collections import defaultdict, deque
+from datetime import datetime, timedelta
+from typing import Optional
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-import json
-import random
-import asyncio
-from collections import defaultdict, deque
-from datetime import datetime, timedelta
-import re
-from dotenv import load_dotenv
+import openai
+
 load_dotenv()
-from typing import Optional
+
 def parse_timespan(timespan: str):
     pattern = re.compile(r"(\d+)([dhms])")
     matches = pattern.findall(timespan.lower())
-    if not matches: return None
-    time_params = {"days": 0, "hours": 0, "minutes": 0, "seconds": 0,"weeks": 0}
+    if not matches:
+        return None
+    time_params = {"days": 0, "hours": 0, "minutes": 0, "seconds": 0, "weeks": 0}
     unit_map = {'d': 'days', 'h': 'hours', 'm': 'minutes', 's': 'seconds', 'w': 'weeks'}
     for amount, unit in matches:
         time_params[unit_map[unit]] += int(amount)
     return timedelta(**time_params)
-    
-import io
+
 
 
 # ─────────────────────────────
 # OPENAI SETUP
 # ─────────────────────────────
-import os
-import discord
-from discord import app_commands
-from discord.ext import commands
-import openai
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    print("Warning: OPENAI_API_KEY is not set.")
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-
-
-load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID") # e.g. 1476039725319061648
 DATA_FILE = "bot_data.json"
@@ -73,9 +72,11 @@ def save_data(data):
 bot_data = load_data()
 
 intents = discord.Intents.default()
-intents.message_content = True
+intents.guilds = True
 intents.members = True
 intents.reactions = True
+intents.messages = True
+intents.message_content = True
 
 bot = commands.Bot(
     command_prefix="!",
@@ -83,57 +84,6 @@ bot = commands.Bot(
 )
 
 tree = bot.tree  # THIS LINE FIXES THE NameError
-
-
-import discord
-from discord.ext import commands
-import openai
-import os
-
-intents = discord.Intents.default()
-intents.message_content = True  # VERY important for reading messages
-bot = commands.Bot(command_prefix="/", intents=intents)
-
-# Set your OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")  # or just put it as a string
-
-# Store AI chat channel ID
-ai_chat_channel_id = None
-
-# Slash command to set the AI chat channel
-@bot.slash_command(name="set_ai_channel", description="Set the channel for AI chat")
-async def set_ai_channel(ctx: discord.ApplicationContext, channel: discord.TextChannel):
-    global ai_chat_channel_id
-    ai_chat_channel_id = channel.id
-    await ctx.respond(f"✅ AI chat is now active in {channel.mention}")
-
-# Listener for messages in the AI channel
-@bot.event
-async def on_message(message):
-    global ai_chat_channel_id
-
-    # Ignore bot messages
-    if message.author.bot:
-        return
-
-    # Only respond in the AI channel
-    if ai_chat_channel_id is None or message.channel.id != ai_chat_channel_id:
-        return
-
-    # Send typing indicator
-    async with message.channel.typing():
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": message.content}
-                ]
-            )
-            reply = response.choices[0].message.content
-            await message.reply(reply)
-        except Exception as e:
-            await message.reply(f"❌ Error: {e}")
 
 # ────────────────────────────────────────────────
 # Nuke Autocomplete (unchanged - keep it)
@@ -393,16 +343,6 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
     await interaction.response.send_message(f"✅ Squid Games channel saved: {channel.mention}", ephemeral=True)
 
 # ─────────────────────────────
-# BOT SETUP
-# ─────────────────────────────
-intents = discord.Intents.default()
-intents.messages = True
-intents.guilds = True
-intents.message_content = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-# ─────────────────────────────
 # AI CONFIG STORAGE (in-memory)
 # ─────────────────────────────
 guild_ai_settings = {}  # {guild_id: {"channel_id": int, "mod_enabled": bool, "enabled": bool}}
@@ -434,11 +374,18 @@ async def ai_mod(interaction: discord.Interaction, toggle: bool):
     await interaction.response.send_message(f"AI moderation {status}", ephemeral=True)
 
 # ─────────────────────────────
-# ON MESSAGE HANDLER FOR AI CHAT
+# ON MESSAGE HANDLER FOR AI CHAT, MODERATION, AND FILTERS
 # ─────────────────────────────
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
+        return
+
+    guild_data = get_guild_data(message.guild.id)
+    if str(message.author.id) in guild_data.get("ignored_users", []):
+        return
+    user_roles = {str(r.id) for r in message.author.roles}
+    if user_roles & set(guild_data.get("ignored_roles", [])):
         return
 
     guild_id = message.guild.id
@@ -447,8 +394,8 @@ async def on_message(message: discord.Message):
     # ───────────── AI MODERATION ─────────────
     if ai_data.get("mod_enabled"):
         try:
-            mod_check = await openai.ChatCompletion.acreate(
-                model="gpt-4o-mini",
+            mod_check = client.chat.completions.create(
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
@@ -480,18 +427,38 @@ async def on_message(message: discord.Message):
             await message.reply(reply[:2000])
         except Exception as e:
             await message.channel.send(f"AI Error: {e}")
+        return
 
-    # ───────────── PROCESS OTHER COMMANDS ─────────────
+    # ───────────── BADWORD FILTER ─────────────
+    cl = message.content.lower()
+    if any(w in cl for w in guild_data.get("badwords", [])):
+        await message.delete()
+        await message.channel.send(f"{message.author.mention}, language!", delete_after=6)
+        return
+
+    # ───────────── ANTI-SPAM ─────────────
+    if guild_data.get("antispam_enabled", True):
+        user_id = str(message.author.id)
+        now = datetime.utcnow()
+        tracker = spam_tracker[message.guild.id][user_id]
+        while tracker and tracker[0] < now - timedelta(seconds=guild_data["antispam_seconds"]):
+            tracker.popleft()
+        tracker.append(now)
+        if len(tracker) > guild_data["antispam_messages"]:
+            try:
+                await message.channel.purge(limit=15, check=lambda m: m.author.id == message.author.id and (now - m.created_at).total_seconds() < guild_data["antispam_seconds"] + 5)
+            except:
+                pass
+            duration = now + timedelta(minutes=5)
+            try:
+                await message.author.timeout(duration, reason="Anti-spam violation")
+                log_timeout_action(message.guild, bot.user, message.author, 5, "Auto", is_antispam=True)
+            except discord.Forbidden:
+                await message.channel.send(f"Anti-spam triggered for {message.author.mention}, missing perms.", delete_after=30)
+            spam_tracker[message.guild.id][user_id].clear()
+
     await bot.process_commands(message)
 
-# ─────────────────────────────
-# SYNC SLASH COMMANDS ON READY
-# ─────────────────────────────
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}")
-# ────────────────────────────────────────────────
 # 2. Main commands (no channel needed)
 # ────────────────────────────────────────────────
 
@@ -2244,43 +2211,6 @@ async def on_message_delete(message):
             embed.set_author(name=str(message.author))
             await channel.send(embed=embed)
 
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot or not message.guild:
-        return
-    guild_data = get_guild_data(message.guild.id)
-    if str(message.author.id) in guild_data.get("ignored_users", []):
-        return
-    user_roles = {str(r.id) for r in message.author.roles}
-    if user_roles & set(guild_data.get("ignored_roles", [])):
-        return
-    cl = message.content.lower()
-    if any(w in cl for w in guild_data.get("badwords", [])):
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, language!", delete_after=6)
-        return
-    if guild_data.get("antispam_enabled", True):
-        user_id = str(message.author.id)
-        now = datetime.utcnow()
-        tracker = spam_tracker[message.guild.id][user_id]
-        while tracker and tracker[0] < now - timedelta(seconds=guild_data["antispam_seconds"]):
-            tracker.popleft()
-        tracker.append(now)
-        if len(tracker) > guild_data["antispam_messages"]:
-            try:
-                await message.channel.purge(limit=15, check=lambda m: m.author.id == message.author.id and (now - m.created_at).total_seconds() < guild_data["antispam_seconds"] + 5)
-            except:
-                pass
-            duration = now + timedelta(minutes=5)
-            try:
-                await message.author.timeout(duration, reason="Anti-spam violation")
-                log_timeout_action(message.guild, bot.user, message.author, 5, "Auto", is_antispam=True)
-            except discord.Forbidden:
-                await message.channel.send(f"Anti-spam triggered for {message.author.mention}, missing perms.", delete_after=30)
-            spam_tracker[message.guild.id][user_id].clear()
-    await bot.process_commands(message)
-
-# ────────────────────────────────────────────────
 # Start the bot
 # ────────────────────────────────────────────────
 bot.run(TOKEN)
