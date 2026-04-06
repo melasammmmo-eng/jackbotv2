@@ -301,6 +301,20 @@ def get_guild_data(guild_id):
         }
     return bot_data[gid]
 
+
+# ────────────────────────────────────────────────
+# Set Auto Join Role
+# ────────────────────────────────────────────────
+@tree.command(name="set_join_role", description="Set role given to new members")
+@app_commands.default_permissions(administrator=True)
+async def set_join_role(interaction: discord.Interaction, role: discord.Role):
+    guild_id = str(interaction.guild_id)
+    if guild_id not in bot_data:
+        bot_data[guild_id] = {}
+    bot_data[guild_id]["join_role_id"] = role.id
+    save_data(bot_data)
+    await interaction.response.send_message(f"New members will now receive **{role.name}** on join.", ephemeral=True)
+
 # ────────────────────────────────────────────────
 # Moderation Logging Helpers
 # ────────────────────────────────────────────────
@@ -1054,53 +1068,35 @@ async def setup_mute_role(
     embed.set_footer(text="This is a permanent role-based mute — no timeout needed")
     await interaction.followup.send(embed=embed, ephemeral=False)
 
-@tree.command(name="kick", description="Kick member")
+@tree.command(name="kick", description="Kick a member with embed")
 @app_commands.default_permissions(kick_members=True)
-async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = None):
-    try:
-        if member.top_role >= interaction.guild.me.top_role or member.top_role >= interaction.user.top_role:
-            await interaction.response.send_message("Cannot kick (hierarchy).", ephemeral=True)
-            return
-        await member.kick(reason=reason or "No reason")
-        await interaction.response.send_message(f"Kicked {member.mention}", ephemeral=False)
-        log_general_action(interaction.guild, "KICK", interaction.user, member, reason or "No reason")
-    except discord.Forbidden:
-        await interaction.response.send_message("Missing permissions to kick.", ephemeral=True)
+@app_commands.describe(member="Member to kick", reason="Reason (optional)")
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if member.top_role >= interaction.user.top_role:
+        await interaction.response.send_message("You cannot kick someone with equal or higher role.", ephemeral=True)
+        return
 
-@tree.command(name="timeout", description="Mutes a user (Timeout + Role) with an embed response")
-@app_commands.default_permissions(moderate_members=True)
-@app_commands.describe(time="Format: 1d, 10h, 30m, 15s (e.g., 1h30m)", reason="Reason for the mute")
-async def mute(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
-    await interaction.response.defer()
-    duration = parse_timespan(time)
-    if not duration:
-        return await interaction.followup.send("❌ Invalid time format! Use `1d`, `1h`, `30m`, etc.")
     try:
-        timeout_duration = duration if duration <= timedelta(days=28) else timedelta(days=28)
-        await member.timeout(timeout_duration, reason=reason)
-        guild_data = get_guild_data(interaction.guild_id)
-        role_id = guild_data.get("mute_role_id")
-        if role_id:
-            mute_role = interaction.guild.get_role(int(role_id))
-            if mute_role:
-                await member.add_roles(mute_role, reason=reason)
+        await member.kick(reason=reason)
+
         embed = discord.Embed(
-            title="User Muted",
-            color=0xffa500,
+            title="Member Kicked",
+            color=0xffaa00,
             timestamp=datetime.utcnow()
         )
-        embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-        embed.add_field(name="Target", value=f"{member.mention} ({member.id})", inline=False)
-        embed.add_field(name="Duration", value=time, inline=True)
+        embed.add_field(name="Kicked User", value=f"{member.mention} ({member.id})", inline=False)
         embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
         embed.add_field(name="Reason", value=reason, inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else None)
         embed.set_footer(text="JackBot Moderation")
-        await interaction.followup.send(embed=embed)
+
+        await interaction.response.send_message(embed=embed)
+
     except discord.Forbidden:
-        await interaction.followup.send("❌ I don't have permission to mute this user. Check my role position!")
+        await interaction.response.send_message("I don't have permission to kick this member.", ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"❌ An error occurred: {e}")
+        await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
 
 @tree.command(name="unmute", description="Remove timeout from a user")
 @app_commands.default_permissions(moderate_members=True)
@@ -1116,51 +1112,51 @@ async def unmute(interaction: discord.Interaction, member: discord.Member, reaso
     except discord.Forbidden:
         await interaction.response.send_message("Missing permissions to unmute.", ephemeral=True)
 
-@tree.command(name="warn", description="Warn a user (logs + DM)")
+@tree.command(name="warn", description="Warn a user with embed")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.describe(member="User to warn", reason="Reason (optional)")
-async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     guild_data = get_guild_data(interaction.guild_id)
     guild_data.setdefault("warnings", {})
+    
     if str(member.id) not in guild_data["warnings"]:
         guild_data["warnings"][str(member.id)] = []
-    warning = {"reason": reason or "No reason", "timestamp": datetime.utcnow().isoformat(), "by": str(interaction.user.id)}
+    
+    warning = {
+        "reason": reason,
+        "timestamp": datetime.utcnow().isoformat(),
+        "by": str(interaction.user.id)
+    }
     guild_data["warnings"][str(member.id)].append(warning)
     save_data(bot_data)
+
     count = len(guild_data["warnings"][str(member.id)])
-    await interaction.response.send_message(f"{member.mention} warned (total: {count})", ephemeral=False)
-    warn_history_log[interaction.guild_id].append({
-        "target": member.name,
-        "target_id": str(member.id),
-        "warner": interaction.user.name,
-        "warner_id": str(interaction.user.id),
-        "reason": reason or "No reason",
-        "timestamp": datetime.utcnow().isoformat()
-    })
-    if len(warn_history_log[interaction.guild_id]) > 50:
-        warn_history_log[interaction.guild_id] = warn_history_log[interaction.guild_id][-50:]
+
+    embed = discord.Embed(
+        title="⚠️ User Warned",
+        color=0xffaa00,
+        timestamp=datetime.utcnow()
+    )
+    embed.add_field(name="User", value=member.mention, inline=True)
+    embed.add_field(name="Total Warnings", value=count, inline=True)
+    embed.add_field(name="Reason", value=reason, inline=False)
+    embed.set_footer(text=f"Warned by {interaction.user}")
+
+    await interaction.response.send_message(embed=embed)
+
+    # Try to DM the user
     try:
-        embed = discord.Embed(title="Warning Received", description=f"In **{interaction.guild.name}**", color=0xffaa00)
-        embed.add_field(name="Reason", value=reason or "No reason", inline=False)
-        embed.add_field(name="Total Warnings", value=count, inline=False)
-        await member.send(embed=embed)
+        dm_embed = discord.Embed(
+            title="You Received a Warning",
+            description=f"In **{interaction.guild.name}**",
+            color=0xffaa00
+        )
+        dm_embed.add_field(name="Reason", value=reason, inline=False)
+        dm_embed.add_field(name="Total Warnings", value=count, inline=False)
+        await member.send(embed=dm_embed)
     except:
         await interaction.followup.send(f"Could not DM {member.mention}", ephemeral=True)
-    log_warn_action(interaction.guild, interaction.user, member, reason)
 
-@tree.command(name="view_join_role", description="See the current auto-join role")
-@app_commands.default_permissions(administrator=True)
-async def view_join_role(interaction: discord.Interaction):
-    guild_data = get_guild_data(interaction.guild_id)
-    role_id = guild_data.get("join_role_id")
-    if role_id:
-        role = interaction.guild.get_role(role_id)
-        if role:
-            await interaction.response.send_message(f"Current auto-join role: {role.mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message("Role ID set but role not found.", ephemeral=True)
-    else:
-        await interaction.response.send_message("No auto-join role set yet.", ephemeral=True)
 
 @tree.command(name="warn_history", description="View warning history")
 @app_commands.default_permissions(moderate_members=True)
