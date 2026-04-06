@@ -14,7 +14,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-import openai
 
 load_dotenv()
 
@@ -30,15 +29,6 @@ def parse_timespan(timespan: str):
     return timedelta(**time_params)
 
 
-
-# ─────────────────────────────
-# OPENAI SETUP
-# ─────────────────────────────
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-if not OPENAI_API_KEY:
-    print("Warning: OPENAI_API_KEY is not set.")
-
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 TOKEN = os.getenv("TOKEN", "").strip()
 GUILD_ID = os.getenv("GUILD_ID", "").strip()  # e.g. 1476039725319061648
@@ -428,41 +418,7 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
     await interaction.response.send_message(f"✅ Squid Games channel saved: {channel.mention}", ephemeral=True)
 
 # ─────────────────────────────
-# SLASH COMMAND TO SET AI CHANNEL
-# ─────────────────────────────
-@tree.command(name="set_ai_channel", description="Set the channel for AI chat")
-@app_commands.describe(channel="The channel where AI will respond")
-async def set_ai_channel(interaction: discord.Interaction, channel: discord.TextChannel):
-    guild_data = get_guild_data(interaction.guild_id)
-    guild_data.setdefault("ai_settings", {
-        "channel_id": None,
-        "enabled": False,
-        "mod_enabled": False
-    })
-    guild_data["ai_settings"]["channel_id"] = channel.id
-    guild_data["ai_settings"]["enabled"] = True
-    save_data(bot_data)
-    await interaction.response.send_message(f"AI chat channel set to {channel.mention}", ephemeral=True)
-
-# ─────────────────────────────
-# SLASH COMMAND TO TOGGLE AI MODERATION
-# ─────────────────────────────
-@tree.command(name="ai_mod", description="Enable or disable AI moderation")
-@app_commands.describe(toggle="Enable (true) or disable (false) AI moderation")
-async def ai_mod(interaction: discord.Interaction, toggle: bool):
-    guild_data = get_guild_data(interaction.guild_id)
-    guild_data.setdefault("ai_settings", {
-        "channel_id": None,
-        "enabled": False,
-        "mod_enabled": False
-    })
-    guild_data["ai_settings"]["mod_enabled"] = toggle
-    save_data(bot_data)
-    status = "enabled" if toggle else "disabled"
-    await interaction.response.send_message(f"AI moderation {status}", ephemeral=True)
-
-# ─────────────────────────────
-# ON MESSAGE HANDLER FOR AI CHAT, MODERATION, AND FILTERS
+# ON MESSAGE HANDLER FOR MODERATION AND FILTERS
 # ─────────────────────────────
 @bot.event
 async def on_message(message: discord.Message):
@@ -474,47 +430,6 @@ async def on_message(message: discord.Message):
         return
     user_roles = {str(r.id) for r in message.author.roles}
     if user_roles & set(guild_data.get("ignored_roles", [])):
-        return
-
-    guild_data = get_guild_data(message.guild.id)
-    ai_data = guild_data.get("ai_settings", {})
-
-    # ───────────── AI MODERATION ─────────────
-    if ai_data.get("mod_enabled"):
-        try:
-            mod_check = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Determine if this message is harmful, toxic, spam, or inappropriate. Reply ONLY with YES or NO."
-                    },
-                    {"role": "user", "content": message.content}
-                ]
-            )
-            result = mod_check.choices[0].message.content.lower()
-            if "yes" in result:
-                await message.delete()
-                await message.channel.send(f"{message.author.mention}, your message was removed by AI moderation.", delete_after=5)
-                return
-        except Exception as e:
-            print(f"[AI MOD ERROR] {e}")
-
-    # ───────────── AI CHAT ─────────────
-    if ai_data.get("enabled") and message.channel.id == ai_data.get("channel_id"):
-        try:
-            async with message.channel.typing():
-                response = await client.chat.completions.acreate(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful Discord bot. Keep replies short and clean."},
-                        {"role": "user", "content": message.content}
-                    ]
-                )
-            reply = response.choices[0].message.content
-            await message.reply(reply[:2000])
-        except Exception as e:
-            await message.channel.send(f"AI Error: {e}")
         return
 
     # ───────────── BADWORD FILTER ─────────────
@@ -2163,26 +2078,6 @@ async def joke(interaction: discord.Interaction):
     ]
     await interaction.response.send_message(random.choice(jokes))
 
-@tree.command(name="airoast", description="Savage roast")
-@app_commands.describe(target="Who to roast (optional)")
-async def airoast(interaction: discord.Interaction, target: discord.Member = None):
-    v = target or interaction.user
-    roasts = [
-        f"{v.mention} has the personality of expired milk.",
-        f"{v.name} is why the mute button exists."
-    ]
-    await interaction.response.send_message(random.choice(roasts))
-
-@tree.command(name="aipickup", description="Cheesy pickup line")
-@app_commands.describe(target="Who (optional)")
-async def aipickup(interaction: discord.Interaction, target: discord.Member = None):
-    t = target.mention if target else "you"
-    lines = [
-        f"Are you Wi-Fi? Because I'm feeling a connection with {t}.",
-        f"Is your name Google? Because {t} has everything I've been searching for."
-    ]
-    await interaction.response.send_message(random.choice(lines))
-
 # ────────────────────────────────────────────────
 # Help Command – updated with new commands
 # ────────────────────────────────────────────────
@@ -2202,7 +2097,7 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(name="Pings", value="`/pingstart` `/pingstop`", inline=False)
     embed.add_field(name="Fun & Utility", value=(
         "`/say` `/8ball` `/coinflip` `/dice` `/joke` "
-        "`/airoast` `/aipickup` `/poll` `/set_starboard` `/rr`"
+        "`/poll` `/set_starboard` `/rr`"
     ), inline=False)
     embed.set_footer(text="bot • March 2026")
     await interaction.response.send_message(embed=embed, ephemeral=True)
