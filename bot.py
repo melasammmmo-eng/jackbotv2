@@ -300,21 +300,38 @@ async def on_ready():
     
     if GUILD_ID:
         try:
-            guild = discord.Object(id=int(GUILD_ID))
+            guild_id_int = int(GUILD_ID)
             print(f"\n🔄 Syncing commands to guild {GUILD_ID}...")
-            synced = await tree.sync(guild=guild)
+            guild_obj = bot.get_guild(guild_id_int)
+            if guild_obj is None:
+                print(f"   ⚠️ Bot is not in guild {GUILD_ID} according to cached guilds. Using Object fallback.")
+                guild_obj = discord.Object(id=guild_id_int)
+            synced = await tree.sync(guild=guild_obj)
             print(f"✅ Synced {len(synced)} guild command(s) to {GUILD_ID}")
             if synced:
                 print(f"   Synced: {[cmd.name for cmd in synced]}")
             else:
                 print("   ⚠️ No commands were newly synced to the configured guild.")
-                print("   Attempting fallback sync to all connected guilds...")
-                for guild_obj in bot.guilds:
+                if hasattr(tree, "copy_global_to"):
                     try:
-                        fallback = await tree.sync(guild=discord.Object(id=guild_obj.id))
-                        print(f"   Fallback sync to guild {guild_obj.id} ({guild_obj.name}): {len(fallback)} commands")
+                        print("   🔁 Copying global commands to guild and retrying sync...")
+                        await tree.copy_global_to(guild=guild_obj)
+                        retry = await tree.sync(guild=guild_obj)
+                        print(f"   🔁 Retry sync returned {len(retry)} commands")
+                        if retry:
+                            print(f"   Synced on retry: {[cmd.name for cmd in retry]}")
+                        else:
+                            print("   ⚠️ Retry still returned 0 commands.")
                     except Exception as fallback_error:
-                        print(f"   ❌ Fallback sync failed for guild {guild_obj.id}: {fallback_error}")
+                        print(f"   ❌ Fallback copy + sync failed: {fallback_error}")
+                else:
+                    print("   ⚠️ copy_global_to is not available on this discord.py version.")
+                    print("   Attempting global sync instead...")
+                    try:
+                        global_synced = await tree.sync()
+                        print(f"   ✅ Global sync returned {len(global_synced)} commands")
+                    except Exception as global_error:
+                        print(f"   ❌ Global sync also failed: {global_error}")
         except ValueError as e:
             print(f"❌ Invalid GUILD_ID value: {GUILD_ID!r} - Error: {e}")
             print("⚠️ Falling back to global sync...")
