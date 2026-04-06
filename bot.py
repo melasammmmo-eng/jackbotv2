@@ -74,44 +74,40 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-# ────────────────────────────────────────────────
-# FIXED SYNC - THIS WAS THE MAIN PROBLEM
-# ────────────────────────────────────────────────
+# ======================
+# COMMAND SYNC SECTION
+# ======================
+
+async def sync_commands():
+    try:
+        print("🔄 Syncing slash commands...")
+
+        # Sync to your specific server (fast & instant)
+        guild = discord.Object(id=1196980093248094340)   # ← Your server ID
+        synced = await bot.tree.sync(guild=guild)
+        
+        print(f"✅ Successfully synced {len(synced)} commands to your server!")
+        for cmd in synced:
+            print(f"   • /{cmd.name}")
+
+        # Optional: Also sync globally (takes up to 1 hour)
+        # global_synced = await bot.tree.sync()
+        # print(f"✅ Synced {len(global_synced)} global commands")
+
+    except Exception as e:
+        print(f"❌ Failed to sync commands: {e}")
+
+# ======================
+# Put this inside your on_ready() event
+# ======================
+
 @bot.event
 async def on_ready():
-    print("Starting Bot...")
-    print(f"✅ Bot logged in as {bot.user}")
-    print(f"Connected to {len(bot.guilds)} guild(s)")
-
-    # Force global sync first
-    try:
-        print("🔄 Syncing commands globally...")
-        synced = await tree.sync()
-        print(f"✅ Synced {len(synced)} global commands!")
-    except Exception as e:
-        print(f"Global sync failed: {e}")
-
-    # Sync to specific guild if set
-    if GUILD_ID:
-        try:
-            guild_id_int = int(GUILD_ID)
-            guild = bot.get_guild(guild_id_int)
-            if guild:
-                print(f"🔄 Syncing to guild: {guild.name}")
-                synced = await tree.sync(guild=guild)
-                print(f"✅ Synced {len(synced)} commands to {guild.name}")
-            else:
-                print(f"⚠️ Guild {GUILD_ID} not found in cache. Trying global sync.")
-        except Exception as e:
-            print(f"Guild sync failed: {e}")
-
-    print("Bot is ready! Try typing /test")
-
-# Test command to verify sync
-@tree.command(name="test", description="Test if bot commands work")
-async def test_cmd(interaction: discord.Interaction):
-    await interaction.response.send_message("✅ Commands are working! Bot is synced.")
-
+    print(f"✅ Logged in as {bot.user} ({bot.user.id})")
+    
+    await sync_commands()        # ← This line syncs your commands
+    
+    print("Bot is ready!")
 # ────────────────────────────────────────────────
 # YOUR ORIGINAL COMMANDS (ALL KEPT UNCHANGED)
 # ────────────────────────────────────────────────
@@ -211,95 +207,41 @@ COLOR_MAP = {
     "brown": "a52a2a",
 }
 
+# ======================
+# COMMAND SYNC SECTION
+# ======================
+
+async def sync_commands():
+    try:
+        print("🔄 Syncing slash commands...")
+
+        # Sync to your specific server (fast & instant)
+        guild = discord.Object(id=1196980093248094340)   # ← Your server ID
+        synced = await bot.tree.sync(guild=guild)
+        
+        print(f"✅ Successfully synced {len(synced)} commands to your server!")
+        for cmd in synced:
+            print(f"   • /{cmd.name}")
+
+        # Optional: Also sync globally (takes up to 1 hour)
+        # global_synced = await bot.tree.sync()
+        # print(f"✅ Synced {len(global_synced)} global commands")
+
+    except Exception as e:
+        print(f"❌ Failed to sync commands: {e}")
+
+# ======================
+# Put this inside your on_ready() event
+# ======================
+
 @bot.event
 async def on_ready():
-    print("Starting Bot...")
-    ping_tasks.clear()
-
-    print(f"✅ Bot logged in as {bot.user}")
-    print(f"Connected to {len(bot.guilds)} guild(s)")
-    print("Connected guild IDs:", [g.id for g in bot.guilds])
+    print(f"✅ Logged in as {bot.user} ({bot.user.id})")
     
-    # DIAGNOSTIC: Check what's in tree before sync
-    print("\n=== COMMAND TREE DIAGNOSTIC ===")
-    print(f"Tree object: {tree}")
-    print(f"Tree type: {type(tree)}")
-    try:
-        all_cmds = tree.get_commands()
-        print(f"📋 Commands before sync: {len(all_cmds)}")
-        if all_cmds:
-            print(f"   Command names: {[cmd.name for cmd in all_cmds][:10]}")
-        else:
-            print("   ⚠️ NO COMMANDS FOUND IN TREE!")
-    except Exception as e:
-        print(f"   ❌ Error getting commands: {e}")
+    await sync_commands()        # ← This line syncs your commands
     
-    if GUILD_ID:
-        try:
-            guild_id_int = int(GUILD_ID)
-            print(f"\n🔄 Syncing commands to guild {GUILD_ID}...")
-            guild_obj = bot.get_guild(guild_id_int)
-            print(f"   Guild from cache: {guild_obj}")
-            if guild_obj is None:
-                print(f"   ⚠️ Bot is not in guild {GUILD_ID} according to cached guilds. Using Object fallback.")
-                guild_obj = discord.Object(id=guild_id_int)
-            synced = await tree.sync(guild=guild_obj)
-            print(f"✅ Synced {len(synced)} guild command(s) to {GUILD_ID}")
-            if synced:
-                print(f"   Synced: {[cmd.name for cmd in synced]}")
-            else:
-                print("   ⚠️ No commands were newly synced to the configured guild.")
-                print(f"   bot.application_id: {bot.application_id}")
-                print(f"   bot.user.id: {bot.user.id}")
-                print(f"   guild_obj.name: {getattr(guild_obj, 'name', None)}")
-                if hasattr(tree, "copy_global_to"):
-                    try:
-                        print("   🔁 Copying global commands to guild and retrying sync...")
-                        await tree.copy_global_to(guild=guild_obj)
-                        retry = await tree.sync(guild=guild_obj)
-                        print(f"   🔁 Retry sync returned {len(retry)} commands")
-                        if retry:
-                            print(f"   Synced on retry: {[cmd.name for cmd in retry]}")
-                        else:
-                            print("   ⚠️ Retry still returned 0 commands.")
-                    except Exception as fallback_error:
-                        print(f"   ❌ Fallback copy + sync failed: {fallback_error}")
-                else:
-                    print("   ⚠️ copy_global_to is not available on this discord.py version.")
-                    print("   Attempting global sync instead...")
-                    try:
-                        global_synced = await tree.sync()
-                        print(f"   ✅ Global sync returned {len(global_synced)} commands")
-                        if global_synced:
-                            print(f"   Global commands: {[cmd.name for cmd in global_synced][:10]}")
-                    except Exception as global_error:
-                        print(f"   ❌ Global sync also failed: {global_error}")
-        except ValueError as e:
-            print(f"❌ Invalid GUILD_ID value: {GUILD_ID!r} - Error: {e}")
-            print("⚠️ Falling back to global sync...")
-            try:
-                synced = await tree.sync()
-                print(f"✅ Synced {len(synced)} global command(s)")
-            except Exception as sync_error:
-                print(f"❌ Global sync failed: {sync_error}")
-        except Exception as e:
-            print(f"❌ Guild sync failed: {e}")
-            print("⚠️ Falling back to global sync...")
-            try:
-                synced = await tree.sync()
-                print(f"✅ Synced {len(synced)} global command(s)")
-            except Exception as sync_error:
-                print(f"❌ Global sync failed too: {sync_error}")
-    else:
-        print("ℹ️ No GUILD_ID set - syncing globally (may take up to 1 hour to appear)")
-        try:
-            synced = await tree.sync()
-            print(f"✅ Synced {len(synced)} command(s) globally")
-            if synced:
-                print(f"   Global commands: {[cmd.name for cmd in synced][:10]}")
-        except Exception as e:
-            print(f"❌ Global sync failed: {e}")
-
+    print("Bot is ready!")
+    
 def get_guild_data(guild_id):
     gid = str(guild_id)
     if gid not in bot_data:
