@@ -376,7 +376,7 @@ async def setsquidchannel(interaction: discord.Interaction, channel: discord.Tex
 # ─────────────────────────────
 # SLASH COMMAND TO SET AI CHANNEL
 # ─────────────────────────────
-@bot.tree.command(name="set_ai_channel", description="Set the channel for AI chat")
+@tree.command(name="set_ai_channel", description="Set the channel for AI chat")
 @app_commands.describe(channel="The channel where AI will respond")
 async def set_ai_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     guild_data = get_guild_data(interaction.guild_id)
@@ -393,7 +393,7 @@ async def set_ai_channel(interaction: discord.Interaction, channel: discord.Text
 # ─────────────────────────────
 # SLASH COMMAND TO TOGGLE AI MODERATION
 # ─────────────────────────────
-@bot.tree.command(name="ai_mod", description="Enable or disable AI moderation")
+@tree.command(name="ai_mod", description="Enable or disable AI moderation")
 @app_commands.describe(toggle="Enable (true) or disable (false) AI moderation")
 async def ai_mod(interaction: discord.Interaction, toggle: bool):
     guild_data = get_guild_data(interaction.guild_id)
