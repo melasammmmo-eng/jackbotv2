@@ -272,26 +272,43 @@ async def on_ready():
     print("Starting Bot...")
     ping_tasks.clear()
 
+    print(f"✅ Bot logged in as {bot.user}")
+    print(f"Connected to {len(bot.guilds)} guild(s)")
     print("Connected guild IDs:", [g.id for g in bot.guilds])
+    
     if GUILD_ID:
         try:
             guild = discord.Object(id=int(GUILD_ID))
-        except ValueError:
-            guild = None
-            print(f"Invalid GUILD_ID value: {GUILD_ID!r}")
-    else:
-        guild = None
-
-    try:
-        if guild:
+            print(f"🔄 Syncing commands to guild {GUILD_ID}...")
             synced = await tree.sync(guild=guild)
-            print(f"Synced {len(synced)} guild command(s) to {GUILD_ID}")
-        else:
+            print(f"✅ Synced {len(synced)} guild command(s) to {GUILD_ID}")
+        except ValueError as e:
+            print(f"❌ Invalid GUILD_ID value: {GUILD_ID!r} - Error: {e}")
+            print("⚠️ Falling back to global sync...")
+            try:
+                synced = await tree.sync()
+                print(f"✅ Synced {len(synced)} global command(s)")
+            except Exception as sync_error:
+                print(f"❌ Global sync failed: {sync_error}")
+        except Exception as e:
+            print(f"❌ Guild sync failed: {e}")
+            print("⚠️ Falling back to global sync...")
+            try:
+                synced = await tree.sync()
+                print(f"✅ Synced {len(synced)} global command(s)")
+            except Exception as sync_error:
+                print(f"❌ Global sync failed too: {sync_error}")
+    else:
+        print("ℹ️ No GUILD_ID set - syncing globally (may take up to 1 hour to appear)")
+        try:
             synced = await tree.sync()
-            print(f"Synced {len(synced)} global command(s)")
+            print(f"✅ Synced {len(synced)} command(s) globally")
+        except Exception as e:
+            print(f"❌ Global sync failed: {e}")
+    
+    print(f"📋 Total commands in tree: {len(tree.commands)}")
+    if tree.commands:
         print("Registered command names:", [cmd.name for cmd in tree.commands])
-    except Exception as e:
-        print(f"Sync failed: {e}")
 
 def get_guild_data(guild_id):
     gid = str(guild_id)
