@@ -110,6 +110,14 @@ async def admin_server_autocomplete(
 
 
 # ────────────────────────────────────────────────
+# SIMPLE TEST COMMAND - HELPS DIAGNOSE ISSUES
+# ────────────────────────────────────────────────
+@tree.command(name="test", description="Test if bot commands work")
+async def test_cmd(interaction: discord.Interaction):
+    await interaction.response.send_message("✅ Bot commands are working!")
+
+
+# ────────────────────────────────────────────────
 # Improved & Working Nuke Command
 # ────────────────────────────────────────────────
 @tree.command(
@@ -276,12 +284,28 @@ async def on_ready():
     print(f"Connected to {len(bot.guilds)} guild(s)")
     print("Connected guild IDs:", [g.id for g in bot.guilds])
     
+    # DIAGNOSTIC: Check what's in tree before sync
+    print("\n=== COMMAND TREE DIAGNOSTIC ===")
+    print(f"Tree object: {tree}")
+    print(f"Tree type: {type(tree)}")
+    try:
+        all_cmds = tree.get_commands()
+        print(f"📋 Commands before sync: {len(all_cmds)}")
+        if all_cmds:
+            print(f"   Command names: {[cmd.name for cmd in all_cmds][:10]}")
+        else:
+            print("   ⚠️ NO COMMANDS FOUND IN TREE!")
+    except Exception as e:
+        print(f"   ❌ Error getting commands: {e}")
+    
     if GUILD_ID:
         try:
             guild = discord.Object(id=int(GUILD_ID))
-            print(f"🔄 Syncing commands to guild {GUILD_ID}...")
+            print(f"\n🔄 Syncing commands to guild {GUILD_ID}...")
             synced = await tree.sync(guild=guild)
             print(f"✅ Synced {len(synced)} guild command(s) to {GUILD_ID}")
+            if synced:
+                print(f"   Synced: {[cmd.name for cmd in synced]}")
         except ValueError as e:
             print(f"❌ Invalid GUILD_ID value: {GUILD_ID!r} - Error: {e}")
             print("⚠️ Falling back to global sync...")
@@ -305,10 +329,6 @@ async def on_ready():
             print(f"✅ Synced {len(synced)} command(s) globally")
         except Exception as e:
             print(f"❌ Global sync failed: {e}")
-    
-    print(f"📋 Total commands in tree: {len(tree.commands)}")
-    if tree.commands:
-        print("Registered command names:", [cmd.name for cmd in tree.commands])
 
 def get_guild_data(guild_id):
     gid = str(guild_id)
@@ -2241,7 +2261,7 @@ async def on_message_delete(message):
     if cid:
         channel = message.guild.get_channel(cid)
         if channel:
-            embed = discord.Embed(color=0xff0000, description=f"Deleted in {message.channel.mention}\n{message.content or '[No text]'}", timestamp=datetime.utcnow())
+            embed = discord.Embed(color=0xff0000, description=f"Deleted in {message.channel.mention}\n{message.content or '[No text]'}", timestamp=datetime.now(datetime.timezone.utc))
             embed.set_author(name=str(message.author))
             await channel.send(embed=embed)
 
