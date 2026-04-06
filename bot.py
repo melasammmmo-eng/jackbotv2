@@ -306,6 +306,15 @@ async def on_ready():
             print(f"✅ Synced {len(synced)} guild command(s) to {GUILD_ID}")
             if synced:
                 print(f"   Synced: {[cmd.name for cmd in synced]}")
+            else:
+                print("   ⚠️ No commands were newly synced to the configured guild.")
+                print("   Attempting fallback sync to all connected guilds...")
+                for guild_obj in bot.guilds:
+                    try:
+                        fallback = await tree.sync(guild=discord.Object(id=guild_obj.id))
+                        print(f"   Fallback sync to guild {guild_obj.id} ({guild_obj.name}): {len(fallback)} commands")
+                    except Exception as fallback_error:
+                        print(f"   ❌ Fallback sync failed for guild {guild_obj.id}: {fallback_error}")
         except ValueError as e:
             print(f"❌ Invalid GUILD_ID value: {GUILD_ID!r} - Error: {e}")
             print("⚠️ Falling back to global sync...")
