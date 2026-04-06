@@ -303,6 +303,7 @@ async def on_ready():
             guild_id_int = int(GUILD_ID)
             print(f"\n🔄 Syncing commands to guild {GUILD_ID}...")
             guild_obj = bot.get_guild(guild_id_int)
+            print(f"   Guild from cache: {guild_obj}")
             if guild_obj is None:
                 print(f"   ⚠️ Bot is not in guild {GUILD_ID} according to cached guilds. Using Object fallback.")
                 guild_obj = discord.Object(id=guild_id_int)
@@ -312,6 +313,9 @@ async def on_ready():
                 print(f"   Synced: {[cmd.name for cmd in synced]}")
             else:
                 print("   ⚠️ No commands were newly synced to the configured guild.")
+                print(f"   bot.application_id: {bot.application_id}")
+                print(f"   bot.user.id: {bot.user.id}")
+                print(f"   guild_obj.name: {getattr(guild_obj, 'name', None)}")
                 if hasattr(tree, "copy_global_to"):
                     try:
                         print("   🔁 Copying global commands to guild and retrying sync...")
@@ -330,6 +334,8 @@ async def on_ready():
                     try:
                         global_synced = await tree.sync()
                         print(f"   ✅ Global sync returned {len(global_synced)} commands")
+                        if global_synced:
+                            print(f"   Global commands: {[cmd.name for cmd in global_synced][:10]}")
                     except Exception as global_error:
                         print(f"   ❌ Global sync also failed: {global_error}")
         except ValueError as e:
@@ -353,6 +359,8 @@ async def on_ready():
         try:
             synced = await tree.sync()
             print(f"✅ Synced {len(synced)} command(s) globally")
+            if synced:
+                print(f"   Global commands: {[cmd.name for cmd in synced][:10]}")
         except Exception as e:
             print(f"❌ Global sync failed: {e}")
 
