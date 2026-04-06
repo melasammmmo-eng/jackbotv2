@@ -267,31 +267,56 @@ COLOR_MAP = {
     "brown": "a52a2a",
 }
 
+# ======================
+# FIXED SYNC + STABILITY SECTION
+# ======================
+
+async def sync_commands():
+    try:
+        print("🔄 Syncing commands to server...")
+
+        # Sync to your specific server (fast)
+        guild = discord.Object(id=1196980093248094340)  # ← Your server ID
+        synced = await bot.tree.sync(guild=guild)
+
+        print(f"✅ Successfully synced {len(synced)} commands!")
+        for cmd in synced:
+            print(f"   • /{cmd.name}")
+
+    except Exception as e:
+        print(f"❌ Sync failed: {e}")
+
+
 @bot.event
 async def on_ready():
-    print("Starting Bot...")
-    ping_tasks.clear()
+    print(f"✅ JackBot is online as {bot.user} ({bot.user.id})")
+    
+    # Sync commands
+    await sync_commands()
+    
+    # Stability info
+    print(f"📊 JackBot is in {len(bot.guilds)} servers")
+    print("🚀 JackBot is fully ready!")
 
-    print("Connected guild IDs:", [g.id for g in bot.guilds])
-    if GUILD_ID:
-        try:
-            guild = discord.Object(id=int(GUILD_ID))
-        except ValueError:
-            guild = None
-            print(f"Invalid GUILD_ID value: {GUILD_ID!r}")
+    # Optional: Change bot status
+    await bot.change_presence(activity=discord.Game(name="Protecting the server"))
+
+
+# ======================
+# EXTRA STABILITY (Rate Limit Protection)
+# ======================
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return  # ignore unknown commands quietly
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ You don't have permission to use this command.")
+    elif isinstance(error, commands.BotMissingPermissions):
+        await ctx.send("❌ I don't have enough permissions to do that.")
     else:
-        guild = None
-
-    try:
-        if guild:
-            synced = await tree.sync(guild=guild)
-            print(f"Synced {len(synced)} guild command(s) to {GUILD_ID}")
-        else:
-            synced = await tree.sync()
-            print(f"Synced {len(synced)} global command(s)")
-        print("Registered command names:", [cmd.name for cmd in tree.commands])
-    except Exception as e:
-        print(f"Sync failed: {e}")
+        print(f"⚠️ Error in command {ctx.command}: {error}")
+        await ctx.send("⚠️ Something went wrong. Please try again later.")
 
 def get_guild_data(guild_id):
     gid = str(guild_id)
