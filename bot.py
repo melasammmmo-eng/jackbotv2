@@ -302,6 +302,53 @@ def get_guild_data(guild_id):
     return bot_data[gid]
 
 
+
+@tree.command(name="timeout", description="Timeout (mute) a member for a specific time")
+@app_commands.default_permissions(moderate_members=True)
+@app_commands.describe(
+    member="Member to timeout",
+    time="Time format: 1d, 2h, 30m, 15s (e.g. 1h30m)",
+    reason="Reason (optional)"
+)
+async def timeout(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
+    if member.top_role >= interaction.user.top_role:
+        await interaction.response.send_message("You cannot timeout someone with equal or higher role.", ephemeral=True)
+        return
+
+    # Parse time (e.g. 1h30m, 2d, 45m)
+    duration = parse_timespan(time)
+    if not duration:
+        await interaction.response.send_message("Invalid time format! Use: `1d`, `2h`, `30m`, `15s`, `1h30m`, etc.", ephemeral=True)
+        return
+
+    # Max timeout is 28 days (Discord limit)
+    if duration > timedelta(days=28):
+        duration = timedelta(days=28)
+
+    try:
+        await member.timeout(duration, reason=reason)
+
+        embed = discord.Embed(
+            title="Member Timed Out",
+            color=0xffaa00,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="User", value=f"{member.mention} ({member.id})", inline=False)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Duration", value=time, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else None)
+        embed.set_footer(text="JackBot Moderation")
+
+        await interaction.response.send_message(embed=embed)
+
+    except discord.Forbidden:
+        await interaction.response.send_message("I don't have permission to timeout this member (check role hierarchy).", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
+
+
 # ────────────────────────────────────────────────
 # Moderation Logging Helpers
 # ────────────────────────────────────────────────
