@@ -303,19 +303,6 @@ def get_guild_data(guild_id):
 
 
 # ────────────────────────────────────────────────
-# Set Auto Join Role
-# ────────────────────────────────────────────────
-@tree.command(name="set_join_role", description="Set role given to new members")
-@app_commands.default_permissions(administrator=True)
-async def set_join_role(interaction: discord.Interaction, role: discord.Role):
-    guild_id = str(interaction.guild_id)
-    if guild_id not in bot_data:
-        bot_data[guild_id] = {}
-    bot_data[guild_id]["join_role_id"] = role.id
-    save_data(bot_data)
-    await interaction.response.send_message(f"New members will now receive **{role.name}** on join.", ephemeral=True)
-
-# ────────────────────────────────────────────────
 # Moderation Logging Helpers
 # ────────────────────────────────────────────────
 def log_general_action(guild, action_type, actor, target=None, reason=None, extra=None):
