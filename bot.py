@@ -7,6 +7,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 import json
 import random
+import flask
 import asyncio
 import openai
 from collections import defaultdict, deque
