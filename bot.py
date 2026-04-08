@@ -85,6 +85,60 @@ async def admin_server_autocomplete(
     return choices
 
 
+# ========================
+# 🌐 DASHBOARD API (Clean & Fixed)
+# ========================
+from aiohttp import web
+import asyncio
+
+# Create aiohttp app
+api_app = web.Application()
+
+async def api_status(request):
+    return web.json_response({"status": "online"})
+
+async def api_commands(request):
+    cmds = [cmd.name for cmd in tree.get_commands()]
+    return web.json_response(cmds)
+
+async def api_members(request):
+    if not bot.guilds:
+        return web.json_response([])
+    guild = bot.guilds[0]
+    members = [{"id": str(m.id), "name": m.name} for m in guild.members]
+    return web.json_response(members)
+
+async def api_timeout(request):
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id"))
+        guild = bot.guilds[0]
+        member = guild.get_member(user_id)
+        
+        if not member:
+            return web.json_response({"success": False, "error": "Member not found"})
+        
+        until = discord.utils.utcnow() + timedelta(minutes=10)
+        await member.timeout(until, reason="Dashboard Timeout")
+        return web.json_response({"success": True})
+    except Exception as e:
+        return web.json_response({"success": False, "error": str(e)})
+
+# Register routes
+api_app.router.add_get('/status', api_status)
+api_app.router.add_get('/commands', api_commands)
+api_app.router.add_get('/members', api_members)
+api_app.router.add_post('/timeout', api_timeout)
+
+async def start_api():
+    runner = web.AppRunner(api_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)   # Railway usually uses 8080
+    await site.start()
+    print("✅ Dashboard API started on port 8080")
+
+    
+
 # ────────────────────────────────────────────────
 # Improved & Working Nuke Command
 # ────────────────────────────────────────────────
@@ -1582,4 +1636,10 @@ async def on_message(message: discord.Message):
 # ────────────────────────────────────────────────
 # Start the bot
 # ────────────────────────────────────────────────
+# Start API + Bot
+async def main():
+    await start_api()
+    await bot.start(TOKEN)
+
+asyncio.run(main())
 bot.run(TOKEN)
