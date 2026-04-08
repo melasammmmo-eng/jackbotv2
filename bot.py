@@ -86,13 +86,22 @@ async def admin_server_autocomplete(
 
 
 # ========================
-# 🌐 DASHBOARD API (Clean & Fixed)
+# 🌐 DASHBOARD API - FIXED
 # ========================
 from aiohttp import web
+from aiohttp.web import middleware
 import asyncio
 
-# Create aiohttp app
-api_app = web.Application()
+# CORS Middleware
+@middleware
+async def cors_middleware(request, handler):
+    response = await handler(request)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+api_app = web.Application(middlewares=[cors_middleware])
 
 async def api_status(request):
     return web.json_response({"status": "online"})
@@ -105,26 +114,25 @@ async def api_members(request):
     if not bot.guilds:
         return web.json_response([])
     guild = bot.guilds[0]
-    members = [{"id": str(m.id), "name": m.name} for m in guild.members]
+    members = [{"id": str(m.id), "name": m.name} for m in guild.members[:100]]  # limit to avoid huge response
     return web.json_response(members)
 
 async def api_timeout(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
+        user_id = int(data["user_id"])
         guild = bot.guilds[0]
         member = guild.get_member(user_id)
-        
         if not member:
             return web.json_response({"success": False, "error": "Member not found"})
         
         until = discord.utils.utcnow() + timedelta(minutes=10)
-        await member.timeout(until, reason="Dashboard Timeout")
+        await member.timeout(until, reason="Dashboard")
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"success": False, "error": str(e)})
 
-# Register routes
+# Routes
 api_app.router.add_get('/status', api_status)
 api_app.router.add_get('/commands', api_commands)
 api_app.router.add_get('/members', api_members)
@@ -133,10 +141,9 @@ api_app.router.add_post('/timeout', api_timeout)
 async def start_api():
     runner = web.AppRunner(api_app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)   # Railway usually uses 8080
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
-    print("✅ Dashboard API started on port 8080")
-
+    print("✅ Dashboard API running on port 8080 with CORS")
     
 
 # ────────────────────────────────────────────────
