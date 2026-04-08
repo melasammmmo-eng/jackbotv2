@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import json
 import random
 import asyncio
+import openai
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 import re
@@ -85,66 +86,78 @@ async def admin_server_autocomplete(
     return choices
 
 
-# ========================
-# 🌐 DASHBOARD API - FIXED
-# ========================
-from aiohttp import web
-from aiohttp.web import middleware
+    from flask import Flask, request, jsonify
+import threading
 import asyncio
+import datetime
 
-# CORS Middleware
-@middleware
-async def cors_middleware(request, handler):
-    response = await handler(request)
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-    return response
+app = Flask(__name__)
 
-api_app = web.Application(middlewares=[cors_middleware])
+SERVICE_KEY = os.getenv("SERVICE_KEY")
 
-async def api_status(request):
-    return web.json_response({"status": "online"})
+logs = []
 
-async def api_commands(request):
-    cmds = [cmd.name for cmd in tree.get_commands()]
-    return web.json_response(cmds)
+@app.route("/")
+def home():
+    return "Bot API running"
 
-async def api_members(request):
-    if not bot.guilds:
-        return web.json_response([])
+@app.route("/status")
+def status():
+    return jsonify({
+        "status": "online",
+        "bot": str(bot.user)
+    })
+
+@app.route("/commands")
+def commands():
+    return jsonify([
+        {"name": cmd.name, "description": cmd.description}
+        for cmd in bot.tree.get_commands()
+    ])
+
+@app.route("/members")
+def members():
     guild = bot.guilds[0]
-    members = [{"id": str(m.id), "name": m.name} for m in guild.members[:100]]  # limit to avoid huge response
-    return web.json_response(members)
+    return jsonify([
+        {"id": m.id, "name": m.name}
+        for m in guild.members if not m.bot
+    ])
 
-async def api_timeout(request):
-    try:
-        data = await request.json()
-        user_id = int(data["user_id"])
-        guild = bot.guilds[0]
-        member = guild.get_member(user_id)
-        if not member:
-            return web.json_response({"success": False, "error": "Member not found"})
-        
-        until = discord.utils.utcnow() + timedelta(minutes=10)
-        await member.timeout(until, reason="Dashboard")
-        return web.json_response({"success": True})
-    except Exception as e:
-        return web.json_response({"success": False, "error": str(e)})
+@app.route("/timeout", methods=["POST"])
+def timeout():
+    data = request.json
 
-# Routes
-api_app.router.add_get('/status', api_status)
-api_app.router.add_get('/commands', api_commands)
-api_app.router.add_get('/members', api_members)
-api_app.router.add_post('/timeout', api_timeout)
+    if data.get("key") != SERVICE_KEY:
+        return jsonify({"error": "unauthorized"}), 401
 
-async def start_api():
-    runner = web.AppRunner(api_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    print("✅ Dashboard API running on port 8080 with CORS")
-    
+    user_id = int(data["user_id"])
+    duration = int(data["duration"])
+
+    guild = bot.guilds[0]
+    member = guild.get_member(user_id)
+
+    if not member:
+        return jsonify({"error": "not found"}), 404
+
+    until = discord.utils.utcnow() + datetime.timedelta(seconds=duration)
+
+    async def do_timeout():
+        await member.timeout(until)
+        logs.append(f"Timed out {member.name} for {duration}s")
+
+    asyncio.run_coroutine_threadsafe(do_timeout(), bot.loop)
+
+    return jsonify({"success": True})
+
+@app.route("/logs")
+def get_logs():
+    return jsonify(logs[-20:])
+
+def run_api():
+    app.run(host="0.0.0.0", port=3000)
+
+threading.Thread(target=run_api).start()
+
 
 # ────────────────────────────────────────────────
 # Improved & Working Nuke Command
@@ -268,7 +281,7 @@ async def nuke_server_cmd(
         print(f"Nuke error: {str(e)}")
         try:
             await interaction.followup.send(f"Critical error during nuke: {str(e)}", ephemeral=True)
-        except:
+        except Exception as e:
             print("Final followup failed – nuke may have partially completed")
 # ────────────────────────────────────────────────
 # Rest of your original code (unchanged from here)
