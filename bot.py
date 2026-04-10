@@ -2118,4 +2118,13 @@ async def on_message(message: discord.Message):
 # ────────────────────────────────────────────────
 # Start the bot
 # ────────────────────────────────────────────────
+from bot_http_api import start_http_api
+
+async def main():
+    await start_http_api(bot)
+    await bot.start(DISCORD_TOKEN)
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
 bot.run(TOKEN)
