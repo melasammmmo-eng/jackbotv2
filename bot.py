@@ -1054,99 +1054,113 @@ async def setup_mute_role(
     embed.set_footer(text="This is a permanent role-based mute — no timeout needed")
     await interaction.followup.send(embed=embed, ephemeral=False)
 
-@tree.command(name="kick", description="Kick member")
+@tree.command(name="kick", description="Kick a member")
 @app_commands.default_permissions(kick_members=True)
-async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = None):
-    try:
-        if member.top_role >= interaction.guild.me.top_role or member.top_role >= interaction.user.top_role:
-            await interaction.response.send_message("Cannot kick (hierarchy).", ephemeral=True)
-            return
-        await member.kick(reason=reason or "No reason")
-        await interaction.response.send_message(f"Kicked {member.mention}", ephemeral=False)
-        log_general_action(interaction.guild, "KICK", interaction.user, member, reason or "No reason")
-    except discord.Forbidden:
-        await interaction.response.send_message("Missing permissions to kick.", ephemeral=True)
+@app_commands.describe(member="Member to kick", reason="Reason (optional)")
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if member.top_role >= interaction.user.top_role:
+        embed = discord.Embed(title="❌ Permission Denied", description="You cannot kick someone with equal or higher role.", color=0xff0000)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@tree.command(name="timeout", description="Mutes a user (Timeout + Role) with an embed response")
+    try:
+        await member.kick(reason=reason)
+        embed = discord.Embed(title="✅ Member Kicked", color=0xff5555, timestamp=datetime.utcnow())
+        embed.add_field(name="User", value=f"{member.mention} (`{member.id}`)", inline=False)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_thumbnail(url=member.display_avatar.url if member.display_avatar else None)
+        embed.set_footer(text="Bot Moderation")
+        await interaction.response.send_message(embed=embed)
+        log_general_action(interaction.guild, "KICK", interaction.user, member, reason)
+    except discord.Forbidden:
+        embed = discord.Embed(title="❌ Error", description="I don't have permission to kick this member.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+
+@tree.command(name="timeout", description="Timeout a member")
 @app_commands.default_permissions(moderate_members=True)
-@app_commands.describe(time="Format: 1d, 10h, 30m, 15s (e.g., 1h30m)", reason="Reason for the mute")
-async def mute(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
+@app_commands.describe(member="Member to timeout", time="Time: 1d 2h 30m", reason="Reason (optional)")
+async def timeout(interaction: discord.Interaction, member: discord.Member, time: str, reason: str = "No reason provided"):
     await interaction.response.defer()
+
     duration = parse_timespan(time)
     if not duration:
-        return await interaction.followup.send("❌ Invalid time format! Use `1d`, `1h`, `30m`, etc.")
+        embed = discord.Embed(title="❌ Invalid Format", description="Use: `1h`, `30m`, `2h15m`, `1d`", color=0xff0000)
+        return await interaction.followup.send(embed=embed)
+
     try:
-        timeout_duration = duration if duration <= timedelta(days=28) else timedelta(days=28)
+        timeout_duration = min(duration, timedelta(days=28))
         await member.timeout(timeout_duration, reason=reason)
-        guild_data = get_guild_data(interaction.guild_id)
-        role_id = guild_data.get("mute_role_id")
-        if role_id:
-            mute_role = interaction.guild.get_role(int(role_id))
-            if mute_role:
-                await member.add_roles(mute_role, reason=reason)
-        embed = discord.Embed(
-            title="User Muted",
-            color=0xffa500,
-            timestamp=datetime.utcnow()
-        )
-        embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-        embed.add_field(name="Target", value=f"{member.mention} ({member.id})", inline=False)
+
+        embed = discord.Embed(title="🔇 Member Timed Out", color=0xffaa00, timestamp=datetime.utcnow())
+        embed.add_field(name="User", value=f"{member.mention} (`{member.id}`)", inline=False)
         embed.add_field(name="Duration", value=time, inline=True)
         embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
         embed.add_field(name="Reason", value=reason, inline=False)
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text="Bot Moderation")
         await interaction.followup.send(embed=embed)
+        log_timeout_action(interaction.guild, interaction.user, member, int(timeout_duration.total_seconds()/60), reason)
     except discord.Forbidden:
-        await interaction.followup.send("❌ I don't have permission to mute this user. Check my role position!")
-    except Exception as e:
-        await interaction.followup.send(f"❌ An error occurred: {e}")
+        embed = discord.Embed(title="❌ Error", description="Missing permissions or role hierarchy issue.", color=0xff0000)
+        await interaction.followup.send(embed=embed)
+
+
 
 @tree.command(name="unmute", description="Remove timeout from a user")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.describe(member="User to unmute", reason="Reason (optional)")
-async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+async def unmute(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     try:
-        if member.top_role >= interaction.guild.me.top_role or member.top_role >= interaction.user.top_role:
-            await interaction.response.send_message("Cannot unmute (hierarchy).", ephemeral=True)
-            return
-        await member.timeout(None, reason=reason or "No reason")
-        await interaction.response.send_message(f"Unmuted {member.mention}", ephemeral=False)
+        await member.timeout(None, reason=reason)
+        embed = discord.Embed(title="✅ User Unmuted", color=0x55ff55, timestamp=datetime.utcnow())
+        embed.add_field(name="User", value=member.mention, inline=False)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_footer(text="Bot Moderation")
+        await interaction.response.send_message(embed=embed)
         log_timeout_action(interaction.guild, interaction.user, member, None, reason, is_unmute=True)
     except discord.Forbidden:
-        await interaction.response.send_message("Missing permissions to unmute.", ephemeral=True)
+        embed = discord.Embed(title="❌ Error", description="Missing permissions.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@tree.command(name="warn", description="Warn a user (logs + DM)")
+
+
+@tree.command(name="warn", description="Warn a user")
 @app_commands.default_permissions(moderate_members=True)
 @app_commands.describe(member="User to warn", reason="Reason (optional)")
-async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     guild_data = get_guild_data(interaction.guild_id)
     guild_data.setdefault("warnings", {})
     if str(member.id) not in guild_data["warnings"]:
         guild_data["warnings"][str(member.id)] = []
-    warning = {"reason": reason or "No reason", "timestamp": datetime.utcnow().isoformat(), "by": str(interaction.user.id)}
+
+    warning = {"reason": reason, "timestamp": datetime.utcnow().isoformat(), "by": str(interaction.user.id)}
     guild_data["warnings"][str(member.id)].append(warning)
     save_data(bot_data)
+
     count = len(guild_data["warnings"][str(member.id)])
-    await interaction.response.send_message(f"{member.mention} warned (total: {count})", ephemeral=False)
-    warn_history_log[interaction.guild_id].append({
-        "target": member.name,
-        "target_id": str(member.id),
-        "warner": interaction.user.name,
-        "warner_id": str(interaction.user.id),
-        "reason": reason or "No reason",
-        "timestamp": datetime.utcnow().isoformat()
-    })
-    if len(warn_history_log[interaction.guild_id]) > 50:
-        warn_history_log[interaction.guild_id] = warn_history_log[interaction.guild_id][-50:]
+
+    embed = discord.Embed(title="⚠️ User Warned", color=0xffaa00, timestamp=datetime.utcnow())
+    embed.add_field(name="User", value=f"{member.mention} (`{member.id}`)", inline=False)
+    embed.add_field(name="Total Warnings", value=str(count), inline=True)
+    embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+    embed.add_field(name="Reason", value=reason, inline=False)
+    embed.set_footer(text="Bot Moderation")
+    await interaction.response.send_message(embed=embed)
+
+    # Try DM
     try:
-        embed = discord.Embed(title="Warning Received", description=f"In **{interaction.guild.name}**", color=0xffaa00)
-        embed.add_field(name="Reason", value=reason or "No reason", inline=False)
-        embed.add_field(name="Total Warnings", value=count, inline=False)
-        await member.send(embed=embed)
+        dm = discord.Embed(title="⚠️ You Received a Warning", color=0xffaa00)
+        dm.add_field(name="Server", value=interaction.guild.name, inline=False)
+        dm.add_field(name="Reason", value=reason, inline=False)
+        dm.add_field(name="Total Warnings", value=count, inline=False)
+        await member.send(embed=dm)
     except:
-        await interaction.followup.send(f"Could not DM {member.mention}", ephemeral=True)
+        pass
+
     log_warn_action(interaction.guild, interaction.user, member, reason)
+
 
 @tree.command(name="view_join_role", description="See the current auto-join role")
 @app_commands.default_permissions(administrator=True)
@@ -1183,85 +1197,125 @@ async def warn_history(interaction: discord.Interaction, member: discord.Member)
 
 @tree.command(name="clear", description="Delete recent messages")
 @app_commands.default_permissions(manage_messages=True)
-@app_commands.describe(amount="2–100 messages")
+@app_commands.describe(amount="Number of messages to delete (2-100)")
 async def clear(interaction: discord.Interaction, amount: app_commands.Range[int, 2, 100]):
     await interaction.response.defer(ephemeral=False)
+    
     try:
         deleted = await interaction.channel.purge(limit=amount)
         count = len(deleted)
-        msg = f"🧹 **{interaction.user.mention}** cleared **{count}** message{'s' if count != 1 else ''}."
-        await interaction.edit_original_response(content=msg)
-        await asyncio.sleep(6)
+
+        embed = discord.Embed(
+            title="🧹 Messages Cleared",
+            description=f"**{count}** message{'s' if count != 1 else ''} deleted.",
+            color=0x00ff00,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Channel", value=interaction.channel.mention, inline=True)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.set_footer(text="Bot Moderation")
+        
+        await interaction.edit_original_response(embed=embed)
+        
+        # Auto delete after 5 seconds
+        await asyncio.sleep(5)
         await interaction.delete_original_response()
-        log_general_action(interaction.guild, "CLEAR MESSAGES", interaction.user, None, f"{count} in {interaction.channel.mention}")
+        
+        log_general_action(interaction.guild, "CLEAR", interaction.user, None, f"{count} messages in {interaction.channel.name}")
+        
     except discord.Forbidden:
-        await interaction.edit_original_response(content="Missing permissions to delete messages.")
+        embed = discord.Embed(title="❌ Error", description="I don't have permission to delete messages.", color=0xff0000)
+        await interaction.edit_original_response(embed=embed)
     except Exception as e:
-        await interaction.edit_original_response(content=f"Error: {str(e)}")
+        embed = discord.Embed(title="❌ Error", description=str(e), color=0xff0000)
+        await interaction.edit_original_response(embed=embed)
+
+
 
 # ────────────────────────────────────────────────
 # Channel Management Commands
 # ────────────────────────────────────────────────
-@tree.command(name="lock", description="Lock current channel (deny @everyone sending messages)")
+@tree.command(name="lock", description="Lock the current channel")
 @app_commands.default_permissions(manage_channels=True)
-@app_commands.describe(reason="Optional reason")
+@app_commands.describe(reason="Reason (optional)")
 async def lock(interaction: discord.Interaction, reason: str = "No reason provided"):
     channel = interaction.channel
     if not isinstance(channel, discord.TextChannel):
-        await interaction.response.send_message("Only works in text channels.", ephemeral=True)
-        return
+        embed = discord.Embed(title="❌ Error", description="This command only works in text channels.", color=0xff0000)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
     everyone = interaction.guild.default_role
     try:
-        await channel.set_permissions(
-            everyone,
-            send_messages=False,
-            add_reactions=False,
-            reason=f"Locked by {interaction.user} | {reason}"
-        )
-        await interaction.response.send_message(f"🔒 **{channel.mention}** locked.\nReason: {reason}")
-        log_general_action(interaction.guild, "CHANNEL LOCKED", interaction.user, None, reason, f"Channel: {channel.mention}")
+        await channel.set_permissions(everyone, send_messages=False, add_reactions=False, reason=f"Locked by {interaction.user} | {reason}")
+        
+        embed = discord.Embed(title="🔒 Channel Locked", color=0xffaa00, timestamp=datetime.utcnow())
+        embed.add_field(name="Channel", value=channel.mention, inline=True)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_footer(text="Bot Moderation")
+        await interaction.response.send_message(embed=embed)
+        
+        log_general_action(interaction.guild, "CHANNEL LOCKED", interaction.user, None, reason, f"Channel: {channel.name}")
     except discord.Forbidden:
-        await interaction.response.send_message("Missing permission to manage channel.", ephemeral=True)
+        embed = discord.Embed(title="❌ Error", description="Missing permissions to manage this channel.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@tree.command(name="unlock", description="Unlock current channel")
+
+
+@tree.command(name="unlock", description="Unlock the current channel")
 @app_commands.default_permissions(manage_channels=True)
-@app_commands.describe(reason="Optional reason")
+@app_commands.describe(reason="Reason (optional)")
 async def unlock(interaction: discord.Interaction, reason: str = "No reason provided"):
     channel = interaction.channel
     if not isinstance(channel, discord.TextChannel):
-        await interaction.response.send_message("Only works in text channels.", ephemeral=True)
-        return
+        embed = discord.Embed(title="❌ Error", description="This command only works in text channels.", color=0xff0000)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
     everyone = interaction.guild.default_role
     try:
-        await channel.set_permissions(
-            everyone,
-            send_messages=None,
-            add_reactions=None,
-            reason=f"Unlocked by {interaction.user} | {reason}"
-        )
-        await interaction.response.send_message(f"🔓 **{channel.mention}** unlocked.\nReason: {reason}")
-        log_general_action(interaction.guild, "CHANNEL UNLOCKED", interaction.user, None, reason, f"Channel: {channel.mention}")
+        await channel.set_permissions(everyone, send_messages=None, add_reactions=None, reason=f"Unlocked by {interaction.user} | {reason}")
+        
+        embed = discord.Embed(title="🔓 Channel Unlocked", color=0x55ff55, timestamp=datetime.utcnow())
+        embed.add_field(name="Channel", value=channel.mention, inline=True)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_footer(text="Bot Moderation")
+        await interaction.response.send_message(embed=embed)
+        
+        log_general_action(interaction.guild, "CHANNEL UNLOCKED", interaction.user, None, reason, f"Channel: {channel.name}")
     except discord.Forbidden:
-        await interaction.response.send_message("Missing permission to manage channel.", ephemeral=True)
+        embed = discord.Embed(title="❌ Error", description="Missing permissions.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@tree.command(name="slowmode", description="Set slowmode delay on current channel")
+
+@tree.command(name="slowmode", description="Set slowmode for the current channel")
 @app_commands.default_permissions(manage_channels=True)
-@app_commands.describe(
-    seconds="Delay in seconds (0–21600, 0 = disable)",
-    reason="Optional reason"
-)
-async def slowmode(interaction: discord.Interaction, seconds: app_commands.Range[int, 0, 21600], reason: str = None):
+@app_commands.describe(seconds="Delay in seconds (0 = disable)", reason="Reason (optional)")
+async def slowmode(interaction: discord.Interaction, seconds: app_commands.Range[int, 0, 21600], reason: str = "No reason provided"):
     channel = interaction.channel
     if not isinstance(channel, discord.TextChannel):
-        await interaction.response.send_message("Only works in text channels.", ephemeral=True)
-        return
+        embed = discord.Embed(title="❌ Error", description="This only works in text channels.", color=0xff0000)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
     try:
-        await channel.edit(slowmode_delay=seconds, reason=f"Slowmode set by {interaction.user} | {reason or 'No reason'}")
+        await channel.edit(slowmode_delay=seconds, reason=f"Slowmode set by {interaction.user} | {reason}")
+        
         status = f"**{seconds} seconds**" if seconds > 0 else "**disabled**"
-        await interaction.response.send_message(f"⏱️ Slowmode set to {status} in {channel.mention}")
-        log_general_action(interaction.guild, "SLOWMODE CHANGED", interaction.user, None, reason or "No reason", f"Channel: {channel.mention} | {seconds}s")
+        embed = discord.Embed(title="⏱️ Slowmode Updated", color=0x00b0ff, timestamp=datetime.utcnow())
+        embed.add_field(name="Channel", value=channel.mention, inline=True)
+        embed.add_field(name="New Slowmode", value=status, inline=True)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_footer(text="Bot Moderation")
+        await interaction.response.send_message(embed=embed)
+        
+        log_general_action(interaction.guild, "SLOWMODE CHANGED", interaction.user, None, reason, f"{seconds}s in {channel.name}")
     except discord.Forbidden:
-        await interaction.response.send_message("Missing permission to manage channel.", ephemeral=True)
+        embed = discord.Embed(title="❌ Error", description="Missing permissions.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+
 
 @tree.command(name="hide", description="Hide current channel from @everyone")
 @app_commands.default_permissions(manage_channels=True)
