@@ -9,6 +9,7 @@ import json
 import random
 import asyncio
 from collections import defaultdict, deque
+from discord.ui import View, Button
 from datetime import datetime, timedelta
 import re
 from typing import Optional
@@ -301,6 +302,7 @@ def get_guild_data(guild_id):
         }
     return bot_data[gid]
 
+
 # ────────────────────────────────────────────────
 # Moderation Logging Helpers
 # ────────────────────────────────────────────────
@@ -350,6 +352,137 @@ def log_warn_action(guild, actor, target, reason=None):
     embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
     embed.set_footer(text="Warning Log • Bot")
     asyncio.create_task(log_channel.send(embed=embed))
+
+
+# ────────────────────────────────────────────────
+# TICKET SYSTEM (Buy a Bot + Bot Support)
+# ────────────────────────────────────────────────
+
+class TicketView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🛒 Buy a Bot", style=discord.ButtonStyle.green, custom_id="ticket_buy_bot")
+    async def buy_bot(self, interaction: discord.Interaction, button: Button):
+        await self.create_ticket(interaction, "buy-bot", "🛒 Buy a Bot")
+
+    @discord.ui.button(label="🤖 Bot Support", style=discord.ButtonStyle.blurple, custom_id="ticket_bot_support")
+    async def bot_support(self, interaction: discord.Interaction, button: Button):
+        await self.create_ticket(interaction, "support", "🤖 Bot Support")
+
+    async def create_ticket(self, interaction: discord.Interaction, ticket_type: str, title_prefix: str):
+        guild = interaction.guild
+        guild_data = get_guild_data(guild.id)
+        
+        category_id = guild_data.get("ticket_category_id")
+        support_role_id = guild_data.get("ticket_support_role_id")
+        
+        if not category_id:
+            return await interaction.response.send_message("❌ Ticket system not set up. Admin: use `/setup_tickets`", ephemeral=True)
+        
+        category = guild.get_channel(category_id)
+        if not category or not isinstance(category, discord.CategoryChannel):
+            return await interaction.response.send_message("❌ Ticket category not found.", ephemeral=True)
+
+        # Prevent duplicate tickets
+        for ch in category.channels:
+            if ch.name.startswith(f"ticket-{ticket_type}") and ch.topic and str(interaction.user.id) in ch.topic:
+                return await interaction.response.send_message(f"❌ You already have an open ticket: {ch.mention}", ephemeral=True)
+
+        # Permission overwrites
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_messages=True),
+        }
+        
+        if support_role_id:
+            support_role = guild.get_role(support_role_id)
+            if support_role:
+                overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_messages=True)
+
+        try:
+            ticket_channel = await guild.create_text_channel(
+                name=f"ticket-{ticket_type}-{interaction.user.name}",
+                category=category,
+                topic=f"Ticket by {interaction.user} ({interaction.user.id}) | Type: {title_prefix}",
+                overwrites=overwrites,
+                reason=f"Ticket created by {interaction.user}"
+            )
+            
+            await ticket_channel.send(
+                f"{interaction.user.mention} **{title_prefix}**\n\n"
+                "Thank you for opening a ticket! Staff will assist you shortly.\n"
+                "Use the button below to close this ticket when finished.",
+                view=CloseTicketView()
+            )
+
+            await interaction.response.send_message(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
+
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error creating ticket: {str(e)}", ephemeral=True)
+
+
+class CloseTicketView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket")
+    async def close_ticket(self, interaction: discord.Interaction, button: Button):
+        if not interaction.channel.name.startswith("ticket-"):
+            return await interaction.response.send_message("❌ This is not a ticket channel.", ephemeral=True)
+        
+        await interaction.response.send_message("🔒 Closing ticket in 5 seconds...", ephemeral=False)
+        await asyncio.sleep(5)
+        try:
+            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+        except:
+            await interaction.channel.send("❌ Could not delete channel. Please delete it manually.")
+
+
+# Setup Command
+@tree.command(name="setup_tickets", description="Create ticket panel (Admin only)")
+@app_commands.default_permissions(administrator=True)
+async def setup_tickets(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel,
+    category: discord.CategoryChannel,
+    support_role: discord.Role = None
+):
+    guild_data = get_guild_data(interaction.guild_id)
+    guild_data["ticket_category_id"] = category.id
+    if support_role:
+        guild_data["ticket_support_role_id"] = support_role.id
+    else:
+        guild_data.pop("ticket_support_role_id", None)
+    
+    save_data(bot_data)
+
+    embed = discord.Embed(
+        title="🎟️ Support Tickets",
+        description="Select the type of ticket you want to open:\n\n"
+                    "**🛒 Buy a Bot** → For purchasing a custom bot\n"
+                    "**🤖 Bot Support** → For help with your bot",
+        color=0x5865F2
+    )
+
+    await channel.send(embed=embed, view=TicketView())
+    await interaction.response.send_message(f"✅ Ticket panel created in {channel.mention}", ephemeral=True)
+
+
+# Quick close command for staff
+@tree.command(name="close_ticket", description="Close current ticket channel")
+@app_commands.default_permissions(manage_channels=True)
+async def close_ticket_cmd(interaction: discord.Interaction):
+    if not interaction.channel.name.startswith("ticket-"):
+        return await interaction.response.send_message("❌ This command can only be used inside a ticket channel.", ephemeral=True)
+    
+    await interaction.response.send_message("🔒 Closing ticket in 3 seconds...")
+    await asyncio.sleep(3)
+    try:
+        await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+    except:
+        await interaction.followup.send("Failed to delete channel.")
+
 
 # ────────────────────────────────────────────────
 # Generic multi-channel log sender (NEW)
